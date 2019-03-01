@@ -471,4 +471,3 @@ int MotorDriverControl::sendSPI(uint8_t *b, int cnt, uint8_t *r)
     spi_cs_pin.set(1);
     return cnt;
 }
-

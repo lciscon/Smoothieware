@@ -68,6 +68,8 @@
 #define runaway_cooling_timeout_checksum   CHECKSUM("runaway_cooling_timeout")
 #define runaway_error_range_checksum       CHECKSUM("runaway_error_range")
 
+#define tolerance_pct_checksum             CHECKSUM("tolerance_pct")
+
 TemperatureControl::TemperatureControl(uint16_t name, int index)
 {
     name_checksum= name;
@@ -163,6 +165,14 @@ void TemperatureControl::load_config()
     // Max and min temperatures we are not allowed to get over (Safety)
     this->max_temp = THEKERNEL->config->value(temperature_control_checksum, this->name_checksum, max_temp_checksum)->by_default(300)->as_number();
     this->min_temp = THEKERNEL->config->value(temperature_control_checksum, this->name_checksum, min_temp_checksum)->by_default(0)->as_number();
+
+    float tpct = THEKERNEL->config->value(temperature_control_checksum, this->name_checksum, tolerance_pct_checksum)->by_default(0)->as_number();
+    if (tpct > 99.0) {
+      tpct = 99.0;
+    } else if (tpct < 0.0) {
+      tpct = 0.0;
+    }
+    this->tolerance_pct = tpct;
 
     // Heater pin
     this->heater_pin.from_string( THEKERNEL->config->value(temperature_control_checksum, this->name_checksum, heater_pin_checksum)->by_default("nc")->as_string());
@@ -352,13 +362,18 @@ void TemperatureControl::on_gcode_received(void *argument)
                     // wait for temp to be reached, no more gcodes will be fetched until this is complete
                     if( gcode->m == this->set_and_wait_m_code) {
                         if(isinf(get_temperature()) && isinf(sensor->get_temperature())) {
-                            THEKERNEL->streams->printf("Temperature reading is unreliable on %s HALT asserted - reset or M999 required\n", designator.c_str());
-                            THEKERNEL->call_event(ON_HALT, nullptr);
+                            if (gcode->subcode == 1) {
+                              //ignore errors...just return
+                            } else {
+                              THEKERNEL->streams->printf("Temperature reading is unreliable on %s HALT asserted - reset or M999 required\n", designator.c_str());
+                              THEKERNEL->call_event(ON_HALT, nullptr);
+                            }
                             return;
                         }
 
+                        float adj_target_temperature = this->target_temperature*((100-this->tolerance_pct)/100);
                         this->waiting = true; // on_second_tick will announce temps
-                        while ( get_temperature() < target_temperature ) {
+                        while ( get_temperature() < adj_target_temperature ) {
                             THEKERNEL->call_event(ON_IDLE, this);
                             // check if ON_HALT was called (usually by kill button)
                             if(THEKERNEL->is_halted() || this->target_temperature == UNDEFINED) {

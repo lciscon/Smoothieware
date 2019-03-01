@@ -39,6 +39,13 @@ public:
     void coordinated_move(float x, float y, float z, float feedrate, bool relative=false);
     void home();
 
+    void set_sensor_state(int mode);
+    void reset_sensor_state();
+    void set_active_tool(Gcode *gcode, int tnum);
+    void set_active_probe(int pnum);
+    float get_tool_temperature(int toolnum);
+    void set_sensor_position(Gcode *gcode, int toolnum, int pos);
+
     bool getProbeStatus() { return this->pin.get(); }
     float getSlowFeedrate() const { return slow_feedrate; }
     float getFastFeedrate() const { return fast_feedrate; }
@@ -55,11 +62,23 @@ private:
     float return_feedrate;
     float probe_height;
     float max_z;
+    float home_offset;
     float dwell_before_probing;
+    float probe_up_val;
+    float probe_down_val;
+    float probe2_up_val;
+    float probe2_down_val;
 
     Pin pin;
+    Pin pin2;
+    Pin active_pin;
+    int active_tool;
+    float tool_delta;
+    Pin calibrate_pin;
+    Pin sensor_on_pin;
     std::vector<LevelingStrategy*> strategies;
     uint16_t debounce_ms, debounce;
+    int sensor_mode;
 
     volatile struct {
         bool is_delta:1;
