@@ -296,7 +296,7 @@ bool ZProbe::doProbeAt(float &mm, float x, float y)
 {
     // move to xy
     coordinated_move(x, y, NAN, getFastFeedrate());
-    return run_probe_return(mm, slow_ffeedrate);
+    return run_probe_return(mm, slow_feedrate);
 }
 
 void ZProbe::set_sensor_state(int mode)
