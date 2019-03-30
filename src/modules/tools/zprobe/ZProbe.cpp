@@ -50,6 +50,8 @@
 #define home_offset_checksum     CHECKSUM("home_offset")
 #define calibrate_pin_checksum      CHECKSUM("calibrate_pin")
 #define sensor_on_pin_checksum      CHECKSUM("sensor_on_pin")
+#define x_pos_checksum           CHECKSUM("x_pos")
+#define y_pos_checksum           CHECKSUM("y_pos")
 
 // from endstop section
 #define delta_homing_checksum    CHECKSUM("delta_homing")
@@ -181,6 +183,8 @@ void ZProbe::config_load()
     this->reverse_z     = THEKERNEL->config->value(zprobe_checksum, reverse_z_direction_checksum)->by_default(false)->as_bool(); // Z probe moves in reverse direction
     this->max_z         = THEKERNEL->config->value(zprobe_checksum, max_z_checksum)->by_default(NAN)->as_number(); // maximum zprobe distance
     this->home_offset         = THEKERNEL->config->value(zprobe_checksum, home_offset_checksum)->by_default(0.0F)->as_number(); // z home offset
+    this->x_pos         = THEKERNEL->config->value(zprobe_checksum, x_pos_checksum)->by_default(0.0F)->as_number(); // x position for probing
+    this->y_pos         = THEKERNEL->config->value(zprobe_checksum, y_pos_checksum)->by_default(0.0F)->as_number(); // y position for probing
 
     this->calibrate_pin.from_string( THEKERNEL->config->value(zprobe_checksum, calibrate_pin_checksum)->by_default("nc" )->as_string())->as_output();
     this->sensor_on_pin.from_string( THEKERNEL->config->value(zprobe_checksum, sensor_on_pin_checksum)->by_default("nc" )->as_string())->as_output();
@@ -227,6 +231,7 @@ bool ZProbe::run_probe(float& mm, float feedrate, float max_dist, bool reverse)
 
     if(this->active_pin.get()) {
         // probe already triggered so abort
+
         return false;
     }
 
@@ -291,7 +296,7 @@ bool ZProbe::doProbeAt(float &mm, float x, float y)
 {
     // move to xy
     coordinated_move(x, y, NAN, getFastFeedrate());
-    return run_probe_return(mm, slow_feedrate);
+    return run_probe_return(mm, slow_ffeedrate);
 }
 
 void ZProbe::set_sensor_state(int mode)
@@ -477,7 +482,7 @@ void ZProbe::on_gcode_received(void *argument)
             // first wait for all moves to finish
             THEKERNEL->conveyor->wait_for_idle();
 
-            if(gcode->subcode == 1) {
+            if((gcode->subcode == 1) || (gcode->subcode == 2)) {
               gcode->stream->printf("Setting probe positions.\n");
               //set probe physical positions
               //lift up other tool
@@ -488,6 +493,13 @@ void ZProbe::on_gcode_received(void *argument)
               set_sensor_position(gcode, toolnum, S_NEUTRAL);
             }
 
+            if (gcode ->subcode == 1) {
+              char buf[32];
+              int n = snprintf(buf, sizeof(buf), "G0 X%f Y%f F5000", this->x_pos, this->y_pos);
+              string g(buf, n);
+              Gcode gc(g, &(StreamOutput::NullStream));
+              THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc);
+            }
 
             bool set_z= (gcode->has_letter('Z') && !is_rdelta);
             bool set_q= (gcode->has_letter('Q') && !is_rdelta);

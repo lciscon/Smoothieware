@@ -103,8 +103,8 @@ endif
 
 # set to not compile in any network support
 export NONETWORK = 1
-# export EXCLUDE_MODULES = tools/drillingcycle tools/laser tools/rotarydeltacalibration tools/scaracal tools/spindle utils/panel
-export EXCLUDE_MODULES = tools/drillingcycles tools/laser tools/spindle utils/panel
+export EXCLUDE_MODULES = tools/drillingcycles tools/laser tools/spindle utils/panel tools/rotarydeltacalibration tools/scaracal tools/filamentdetector tools/temperatureswitch
+# export EXCLUDE_MODULES = tools/drillingcycles tools/laser tools/spindle utils/panel
 
 include $(BUILD_DIR)/build.mk
 
