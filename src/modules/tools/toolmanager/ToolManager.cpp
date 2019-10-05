@@ -43,8 +43,11 @@ void ToolManager::on_gcode_received(void *argument)
 {
     Gcode *gcode = static_cast<Gcode*>(argument);
 
-    if( gcode->has_letter('T') ) {
+    if(gcode->has_letter('T')) {
+
         int new_tool = gcode->get_value('T');
+        gcode->stream->printf("Toolmanager new tool: %d\n", new_tool);
+
         if(new_tool >= (int)this->tools.size() || new_tool < 0) {
             // invalid tool
             char buf[32]; // should be big enough for any status
@@ -62,6 +65,7 @@ void ToolManager::on_gcode_received(void *argument)
 
                 //send new_tool_offsets to robot
                 const float *new_tool_offset = tools[new_tool]->get_offset();
+                gcode->stream->printf("Tool offset: %f %f %f\n", new_tool_offset[0],new_tool_offset[1],new_tool_offset[2]);
                 THEROBOT->setToolOffset(new_tool_offset);
             }
         }
@@ -104,6 +108,16 @@ void ToolManager::on_set_public_data(void* argument)
 
     if(!pdr->starts_with(tool_manager_checksum)) return;
 
+    if(pdr->second_element_is(set_offset_checksum)) {
+      float *info = static_cast<float *>(pdr->get_data_ptr());
+      int toolnum = info[0];
+      int axis = info[1];
+      float newoffset = info[2];
+
+      float *offset = this->tools[toolnum]->get_offset();
+      offset[axis] = newoffset;
+    }
+
     // ok this is targeted at us, so change tools
     //uint16_t tool_name= *static_cast<float*>(pdr->get_data_ptr());
     // TODO: fire a tool change gcode
@@ -124,6 +138,3 @@ void ToolManager::add_tool(Tool* tool_to_add)
     }
     this->tools.push_back( tool_to_add );
 }
-
-
-

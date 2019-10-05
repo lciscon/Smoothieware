@@ -56,6 +56,7 @@ private:
     void config_load();
     void probe_XYZ(Gcode *gc, float x, float y, float z);
     uint32_t read_probe(uint32_t dummy);
+    void store_delta();
 
     float slow_feedrate;
     float fast_feedrate;
@@ -63,6 +64,7 @@ private:
     float probe_height;
     float max_z;
     float home_offset;
+    float home_offset2;
     float x_pos;
     float y_pos;
     float dwell_before_probing;

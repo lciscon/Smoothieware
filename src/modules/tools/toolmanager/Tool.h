@@ -19,11 +19,10 @@ public:
 
     virtual void select()= 0;
     virtual void deselect()= 0;
-    virtual const float *get_offset() const { return offset; }
+    virtual float *get_offset() { return offset; }
     virtual uint16_t get_name() const { return identifier; }
 
 protected:
     float offset[3];
     uint16_t identifier;
 };
-
