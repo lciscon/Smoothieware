@@ -65,11 +65,6 @@
 #define probe2_up_checksum    CHECKSUM("probe2_up")
 #define probe2_down_checksum    CHECKSUM("probe2_down")
 
-#define SENSOR_STATE_OFF        0
-#define SENSOR_STATE_ON         1
-#define SENSOR_STATE_CALIBRATE  2
-#define SENSOR_STATE_DEBUG      3
-
 #define X_AXIS 0
 #define Y_AXIS 1
 #define Z_AXIS 2
@@ -301,7 +296,7 @@ bool ZProbe::doProbeAt(float &mm, float x, float y)
 {
     // move to xy
     coordinated_move(x, y, NAN, getFastFeedrate());
-    return run_probe_return(mm, slow_feedrate);
+    return run_probe_return(mm, slow_feedrate, -1, false);
 }
 
 void ZProbe::set_sensor_state(int mode)
@@ -436,6 +431,8 @@ void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos)
 {
   char buf[32];
   int n = 0;
+  bool check1 = false;
+  bool check2 = false;
 
   gcode->stream->printf("Set Sensor Position  Tool: %d Position: %d\n", toolnum, pos);
 
@@ -443,6 +440,7 @@ void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos)
       switch (pos) {
         case S_RAISED:
           n = snprintf(buf, sizeof(buf), "M280 S%1.4f", this->probe_up_val);
+          check1 = true;
           break;
 
         case S_LOWERED:
@@ -470,6 +468,7 @@ void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos)
     switch (pos) {
       case S_RAISED:
         n = snprintf(buf, sizeof(buf), "M280.1 S%1.4f", this->probe2_up_val);
+        check2 = true;
         break;
 
       case S_LOWERED:
@@ -507,6 +506,22 @@ void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos)
   Gcode gc2(g2, &(StreamOutput::NullStream));
   THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc2);
 
+  //if we are raising the servo double check that the sensor triggered correctly
+  bool checkval = false;
+  if (check1) {
+    if(this->pin.get() != invert_probe) {
+        checkval = true;
+    }
+  } else if (check2) {
+    if(this->pin2.get() != invert_probe) {
+      checkval = true;
+    }
+  }
+
+  if (checkval == false) {
+    //throw exception
+    THEKERNEL->call_event(ON_HALT, nullptr);
+  }
 }
 
 void ZProbe::on_gcode_received(void *argument)
@@ -556,6 +571,20 @@ void ZProbe::on_gcode_received(void *argument)
             // first wait for all moves to finish
             THEKERNEL->conveyor->wait_for_idle();
 
+            if((gcode->subcode == 1) || (gcode->subcode == 2)) {
+              gcode->stream->printf("Setting probe positions.\n");
+              //set probe physical positions
+              //also double check that the sensor is working correctly
+              //lift up current tool - will throw error if the sensor or servo aren't working
+              set_sensor_position(gcode, toolnum, S_RAISED);
+              //lift up other tool - will throw error if the sensor or servo aren't working
+              set_sensor_position(gcode, abs(toolnum-1), S_RAISED);
+              //push down current tool
+              set_sensor_position(gcode, toolnum, S_LOWERED);
+              //release current tool
+              set_sensor_position(gcode, toolnum, S_NEUTRAL);
+            }
+
             if (gcode ->subcode == 1) {
               char buf[64];
               int n = snprintf(buf, sizeof(buf), "G0 X%f Y%f F5000", this->x_pos, this->y_pos);
@@ -565,16 +594,6 @@ void ZProbe::on_gcode_received(void *argument)
               gcode->stream->printf("Sending command: %s\n", buf);
             }
 
-            if((gcode->subcode == 1) || (gcode->subcode == 2)) {
-              gcode->stream->printf("Setting probe positions.\n");
-              //set probe physical positions
-              //lift up other tool
-              set_sensor_position(gcode, abs(toolnum-1), S_RAISED);
-              //push down current tool
-              set_sensor_position(gcode, toolnum, S_LOWERED);
-              //release current tool
-              set_sensor_position(gcode, toolnum, S_NEUTRAL);
-            }
 
             if(this->active_pin.get()) {
                 gcode->stream->printf("ZProbe triggered before move, aborting command.\n");

@@ -17,6 +17,11 @@
 #define zprobe_checksum            CHECKSUM("zprobe")
 #define leveling_strategy_checksum CHECKSUM("leveling-strategy")
 
+#define SENSOR_STATE_OFF        0
+#define SENSOR_STATE_ON         1
+#define SENSOR_STATE_CALIBRATE  2
+#define SENSOR_STATE_DEBUG      3
+
 class StepperMotor;
 class Gcode;
 class StreamOutput;
