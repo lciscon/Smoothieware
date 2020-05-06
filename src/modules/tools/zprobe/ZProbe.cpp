@@ -45,6 +45,7 @@
 #define fast_feedrate_checksum   CHECKSUM("fast_feedrate")
 #define return_feedrate_checksum CHECKSUM("return_feedrate")
 #define probe_height_checksum    CHECKSUM("probe_height")
+#define disable_check_probe_checksum    CHECKSUM("disable_check")
 #define gamma_max_checksum       CHECKSUM("gamma_max")
 #define max_z_checksum           CHECKSUM("max_z")
 #define reverse_z_direction_checksum CHECKSUM("reverse_z")
@@ -113,6 +114,8 @@ void ZProbe::config_load()
     this->probe_down_val    = THEKERNEL->config->value(zprobe_checksum, probe_down_checksum)->by_default(0  )->as_number();
     this->probe2_up_val    = THEKERNEL->config->value(zprobe_checksum, probe2_up_checksum)->by_default(0  )->as_number();
     this->probe2_down_val    = THEKERNEL->config->value(zprobe_checksum, probe2_down_checksum)->by_default(0  )->as_number();
+
+	this->disable_check_probe    = THEKERNEL->config->value(zprobe_checksum, disable_check_probe_checksum)->by_default(false )->as_bool();
 
     // set the active pin to the first one
     this->active_pin = this->pin;
@@ -231,9 +234,9 @@ bool ZProbe::run_probe(float& mm, float feedrate, float max_dist, bool reverse)
 
     if(this->active_pin.get()) {
         // probe already triggered so abort
-
         return false;
     }
+
 
     float maxz= max_dist < 0 ? this->max_z*2 : max_dist;
 
@@ -299,10 +302,11 @@ bool ZProbe::doProbeAt(float &mm, float x, float y)
     return run_probe_return(mm, slow_feedrate, -1, false);
 }
 
-void ZProbe::set_sensor_state(int mode)
+void ZProbe::set_sensor_state(Gcode *gcode, int mode)
 {
 
   if (sensor_mode != mode) {
+	gcode->stream->printf("Setting sensor state to %d\n", mode);
     switch (mode) {
       case 0:
         this->sensor_on_pin.set(false);
@@ -348,6 +352,8 @@ void ZProbe::store_delta()
 //  }
 }
 
+
+// This just pushes a move to the current Z value
 void ZProbe::set_active_tool(Gcode *gcode, int pval)
 {
   float mpos[3];
@@ -367,39 +373,6 @@ void ZProbe::set_active_tool(Gcode *gcode, int pval)
 
 }
 
-/*
-void ZProbe::set_active_tool(Gcode *gcode, int pval)
-{
-
-  float mpos[3];
-  THEROBOT->get_current_machine_position(mpos);
-  if(THEROBOT->compensationTransform) THEROBOT->compensationTransform(mpos, true); // get inverse compensation transform
-  float delta;
-
-  if (pval != 0) {
-    delta = -this->tool_delta;
-  } else {
-    delta = this->tool_delta;
-  }
-
-  gcode->stream->printf("Old tool: %d  New tool: %d\n", this->active_tool, pval);
-  gcode->stream->printf("Tool Change old Z:%1.4f\n", mpos[Z_AXIS]);
-
-  if (pval != this->active_tool) {
-      mpos[Z_AXIS] += delta;
-      gcode->stream->printf("Tool change new Z position %f\n", mpos[Z_AXIS]);
-      if(THEROBOT->compensationTransform) THEROBOT->compensationTransform(mpos, false); // get compensation transform
-
-      ActuatorCoordinates ac{NAN, NAN, NAN};
-      ac[Z_AXIS] =  mpos[Z_AXIS];
-      THEROBOT->reset_actuator_position(ac);
-
-      gcode->stream->printf("Done!\n");
-  }
-
-  this->active_tool = pval;
-}
-*/
 
 
 void ZProbe::reset_sensor_state()
@@ -493,6 +466,13 @@ void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos)
     }
   }
 
+  //make sure sensor is turned on first
+  if (this->disable_check_probe == false) {
+	  if (check1 || check2) {
+		  set_sensor_state(gcode, SENSOR_STATE_ON);
+	  }
+	}
+
   gcode->stream->printf("Output %s\n", buf);
 
   string g(buf, n);
@@ -507,21 +487,32 @@ void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos)
   THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc2);
 
   //if we are raising the servo double check that the sensor triggered correctly
-  bool checkval = false;
-  if (check1) {
-    if(this->pin.get() != invert_probe) {
-        checkval = true;
-    }
-  } else if (check2) {
-    if(this->pin2.get() != invert_probe) {
-      checkval = true;
-    }
-  }
+  bool checkval = true;
+  if (this->disable_check_probe == false) {
+	  if (check1) {
+	    if(this->pin.get() != invert_probe) {
+	        checkval = true;
+	    } else {
+	      checkval = false;
+	    }
+	  } else if (check2) {
+	    if(this->pin2.get() != invert_probe) {
+	      checkval = true;
+	    } else {
+	      checkval = false;
+	    }
+	  }
 
-  if (checkval == false) {
-    //throw exception
-    THEKERNEL->call_event(ON_HALT, nullptr);
-  }
+	  if (checkval == false) {
+	    //throw exception
+	//    gcode->stream->printf("//action:prompt_begin Sensor initialization failure\n");
+	//    gcode->stream->printf("//action:prompt_choice Ok\n");
+	//    gcode->stream->printf("//action:prompt_show\n");
+	    gcode->stream->printf("//action:error Sensor initialization failure\n");
+
+	    THEKERNEL->call_event(ON_HALT, nullptr);
+	  }
+	}
 }
 
 void ZProbe::on_gcode_received(void *argument)
@@ -538,7 +529,7 @@ void ZProbe::on_gcode_received(void *argument)
             return;
         }
 
-        set_sensor_state(SENSOR_STATE_ON);
+        set_sensor_state(gcode, SENSOR_STATE_ON);
 
         //tool number used to be indicated with a T.  However this causes the tool ToolManager
         //to switch coordinate systems.  That messes up the Z.  Keep the T for compatibility
@@ -587,11 +578,23 @@ void ZProbe::on_gcode_received(void *argument)
 
             if (gcode ->subcode == 1) {
               char buf[64];
+			  //HACKHACK we need to make sure the X/Y position accounts for the X/Y tool offset
+			  //easiest way to do that is to put it into the tool mode for that tool
+			  if (toolnum == 1) {
+				  int n = snprintf(buf, sizeof(buf), "T1");
+				  string g(buf, n);
+				  Gcode gc(g, &(StreamOutput::NullStream));
+			  }
               int n = snprintf(buf, sizeof(buf), "G0 X%f Y%f F5000", this->x_pos, this->y_pos);
               string g(buf, n);
               Gcode gc(g, &(StreamOutput::NullStream));
               THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc);
               gcode->stream->printf("Sending command: %s\n", buf);
+			  if (toolnum == 1) {
+				  int n = snprintf(buf, sizeof(buf), "T0");
+				  string g(buf, n);
+				  Gcode gc(g, &(StreamOutput::NullStream));
+			  }
             }
 
 
@@ -599,6 +602,7 @@ void ZProbe::on_gcode_received(void *argument)
                 gcode->stream->printf("ZProbe triggered before move, aborting command.\n");
                 return;
             }
+
 
             bool set_z= (gcode->has_letter('Z') && !is_rdelta);
             bool set_q= (gcode->has_letter('Q') && !is_rdelta);
@@ -640,20 +644,20 @@ void ZProbe::on_gcode_received(void *argument)
                 THEROBOT->get_current_machine_position(mpos);
                 if(THEROBOT->compensationTransform) THEROBOT->compensationTransform(mpos, true); // get inverse compensation transform
 
-//                float curz = mpos[Z_AXIS];
                 Robot::wcs_t wpos = THEROBOT->mcs2wcs(mpos);
                 float curz = THEROBOT->from_millimeters(std::get<Z_AXIS>(wpos));
 
                 this->tool_delta = curz - this->home_offset2;
                 this->store_delta();
                 gcode->stream->printf("Current Z:%1.4f Home Offset: %1.4f  Home Offset2: %1.4f  New Delta: %1.4f\n", curz, this->home_offset, this->home_offset2, this->tool_delta);
+
               }
 
             } else {
                 gcode->stream->printf("ZProbe not triggered\n");
             }
 
-            set_sensor_state(SENSOR_STATE_OFF);
+            set_sensor_state(gcode, SENSOR_STATE_OFF);
 
         } else {
             if(this->active_pin.get()) {
@@ -721,7 +725,7 @@ void ZProbe::on_gcode_received(void *argument)
             return;
         }
 
-        set_sensor_state(SENSOR_STATE_ON);
+        set_sensor_state(gcode, SENSOR_STATE_ON);
 
         if(this->active_pin.get() ^ (gcode->subcode >= 4)) {
             gcode->stream->printf("error:ZProbe triggered before move, aborting command.\n");
@@ -863,21 +867,29 @@ void ZProbe::on_gcode_received(void *argument)
 
                 case 510:
                     // M510: calibrate on
-                    set_sensor_state(SENSOR_STATE_CALIBRATE);
+                    set_sensor_state(gcode, SENSOR_STATE_CALIBRATE);
                     break;
 
                 case 511:
                     // M511: calibrate off
-                    set_sensor_state(SENSOR_STATE_OFF);
+                    set_sensor_state(gcode, SENSOR_STATE_OFF);
                     break;
 
                 case 515:
-                    set_sensor_state(SENSOR_STATE_ON);
+                    set_sensor_state(gcode, SENSOR_STATE_ON);
                     break;
 
                 case 516:
-                    set_sensor_state(SENSOR_STATE_OFF);
+                    set_sensor_state(gcode, SENSOR_STATE_OFF);
                     break;
+
+				case 517:
+					//reset to initial probe state
+					//right now that is only reset the tool deltas
+					this->tool_delta = 0;
+	                this->store_delta();
+	                gcode->stream->printf("Reset tool state\n");
+					break;
 
 
             case 500: // save settings
@@ -928,7 +940,7 @@ void ZProbe::probe_XYZ(Gcode *gcode, float x, float y, float z)
     // print results using the GRBL format
     gcode->stream->printf("[PRB:%1.3f,%1.3f,%1.3f:%d]\n", THEKERNEL->robot->from_millimeters(pos[X_AXIS]), THEKERNEL->robot->from_millimeters(pos[Y_AXIS]), THEKERNEL->robot->from_millimeters(pos[Z_AXIS]), probeok);
     THEROBOT->set_last_probe_position(std::make_tuple(pos[X_AXIS], pos[Y_AXIS], pos[Z_AXIS], probeok));
-    set_sensor_state(SENSOR_STATE_OFF);
+    set_sensor_state(gcode, SENSOR_STATE_OFF);
 
     if(gcode->has_letter('Q') && (probeok == 1)) {
           // set Z to the stored value, and leave probe where it is

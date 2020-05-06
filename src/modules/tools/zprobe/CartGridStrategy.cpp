@@ -446,6 +446,7 @@ bool CartGridStrategy::handleGcode(Gcode *gcode)
                 __disable_irq();
                 save_grid(gcode->stream);
                 __enable_irq();
+                gcode->stream->printf("//action:gridsaved\n");
             }
 
             return true;
@@ -653,12 +654,12 @@ bool CartGridStrategy::doProbe(Gcode *gc)
         }
     }
 
-    zprobe->set_sensor_state(SENSOR_STATE_ON);
+    zprobe->set_sensor_state(gc, SENSOR_STATE_ON);
 
     // find bed, and leave probe probe_height above bed
     if(!findBed(x_start, y_start)) {
         gc->stream->printf("Finding bed failed, check the initial height setting\n");
-        zprobe->set_sensor_state(SENSOR_STATE_OFF);
+        zprobe->set_sensor_state(gc, SENSOR_STATE_OFF);
         return false;
     }
 
@@ -692,7 +693,7 @@ bool CartGridStrategy::doProbe(Gcode *gc)
             float xProbe = this->x_start + (this->x_size / (this->current_grid_x_size - 1)) * xCount;
 
             if(!zprobe->doProbeAt(mm, xProbe - X_PROBE_OFFSET_FROM_EXTRUDER, yProbe - Y_PROBE_OFFSET_FROM_EXTRUDER)){
-              zprobe->set_sensor_state(SENSOR_STATE_OFF);
+              zprobe->set_sensor_state(gc, SENSOR_STATE_OFF);
                 return false;
             }
 
@@ -717,7 +718,7 @@ bool CartGridStrategy::doProbe(Gcode *gc)
     }
 
     setAdjustFunction(true);
-    zprobe->set_sensor_state(SENSOR_STATE_OFF);
+    zprobe->set_sensor_state(gc, SENSOR_STATE_OFF);
 
     return true;
 }

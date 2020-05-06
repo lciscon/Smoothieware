@@ -33,7 +33,6 @@ ToolManager::ToolManager()
 
 void ToolManager::on_module_loaded()
 {
-
     this->register_for_event(ON_GCODE_RECEIVED);
     this->register_for_event(ON_GET_PUBLIC_DATA);
     this->register_for_event(ON_SET_PUBLIC_DATA);
@@ -42,6 +41,15 @@ void ToolManager::on_module_loaded()
 void ToolManager::on_gcode_received(void *argument)
 {
     Gcode *gcode = static_cast<Gcode*>(argument);
+
+	//filter out certain lines because they are not tool changes!!
+	if(gcode->has_m) {
+		if((gcode->m == 104 ) || ( gcode->m == 109 )) { // temperature settings
+//			gcode->stream->printf("Skipping temp command\n");
+			return;
+		}
+	}
+
 
     if(gcode->has_letter('T')) {
 
@@ -99,7 +107,8 @@ void ToolManager::on_get_public_data(void* argument)
     }else if(pdr->second_element_is(get_active_tool_checksum)) {
         pdr->set_data_ptr(&this->active_tool);
         pdr->set_taken();
-    }
+
+	}
 }
 
 void ToolManager::on_set_public_data(void* argument)

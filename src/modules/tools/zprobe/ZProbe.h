@@ -44,7 +44,7 @@ public:
     void coordinated_move(float x, float y, float z, float feedrate, bool relative=false);
     void home();
 
-    void set_sensor_state(int mode);
+    void set_sensor_state(Gcode *gcode, int mode);
     void reset_sensor_state();
     void set_active_tool(Gcode *gcode, int tnum);
     void set_active_probe(int pnum);
@@ -77,6 +77,7 @@ private:
     float probe_down_val;
     float probe2_up_val;
     float probe2_down_val;
+	bool disable_check_probe;
 
     Pin pin;
     Pin pin2;

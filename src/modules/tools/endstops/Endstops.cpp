@@ -469,8 +469,11 @@ void Endstops::on_idle(void *argument)
                 }
                 this->status = LIMIT_TRIGGERED;
                 i->debounce= 0;
+//                THEKERNEL->streams->printf("//action:cancel\n");
                 // disables heaters and motors, ignores incoming Gcode and flushes block queue
                 THEKERNEL->call_event(ON_HALT, nullptr);
+                //but don't keep us in halted mode...
+//                THEKERNEL->call_event(ON_HALT, (void *)1); // clears on_halt
                 return;
             }
         }
