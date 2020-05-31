@@ -77,7 +77,30 @@ void ToolManager::on_gcode_received(void *argument)
                 THEROBOT->setToolOffset(new_tool_offset);
             }
         }
+	} else if(gcode->has_m) {
+        // M code processing here
+		int tnum = 1;
+		float newoff[3] = {0.0,0.0,0.0};
+
+        switch (gcode->m) {
+			case 675: //set tool offsets
+				if (gcode->has_letter('V')) tnum = gcode->get_value('V');
+				if (gcode->has_letter('X')) newoff[0] = gcode->get_value('X');
+				if (gcode->has_letter('Y')) newoff[1] = gcode->get_value('Y');
+				tools[tnum]->set_offset(newoff);
+	            break;
+
+			case 500: // save settings
+			case 503: // print settings
+				//BUGBUG HACKHACK FIXFIX only shows tool offset for T1 right now
+				const float *new_tool_offset = tools[1]->get_offset();
+				gcode->stream->printf(";Tool offsets:\nM65 V1 X%1.4f Y%1.4f\n",
+					new_tool_offset[0],new_tool_offset[1]);
+				break;
+		}
     }
+
+
 }
 
 void ToolManager::on_get_public_data(void* argument)

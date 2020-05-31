@@ -81,6 +81,7 @@
 
 #define abs(a) ((a<0) ? -a : a)
 
+
 void ZProbe::on_module_loaded()
 {
     // if the module is disabled -> do nothing
@@ -769,6 +770,15 @@ void ZProbe::on_gcode_received(void *argument)
         // M code processing here
         int c;
         switch (gcode->m) {
+			case 118: //echo input to output
+				{
+					string retval2 = gcode->get_command();
+					//the command starts with a space.  remove it
+					retval2.erase(0,1);
+					gcode->stream->printf("%s\n", retval2.c_str());
+				}
+                break;
+
             case 119:
                 c = this->active_pin.get();
                 gcode->stream->printf(" Probe: %d", c);
@@ -783,8 +793,10 @@ void ZProbe::on_gcode_received(void *argument)
                 if (gcode->has_letter('H')) this->probe_height = gcode->get_value('H');
                 if (gcode->has_letter('O')) this->home_offset = gcode->get_value('O');
                 if (gcode->has_letter('Q')) this->home_offset2 = gcode->get_value('Q');
+
                 if (gcode->has_letter('P')) this->home_offset = this->home_offset + gcode->get_value('P');
                 if (gcode->has_letter('U')) this->home_offset2 = this->home_offset2 + gcode->get_value('U');
+
                 if (gcode->has_letter('I')) { // NOTE this is temporary and toggles the invertion status of the pin
                     invert_override= (gcode->get_value('I') != 0);
                     pin.set_inverting(pin.is_inverting() != invert_override); // XOR so inverted pin is not inverted and vice versa
@@ -792,110 +804,121 @@ void ZProbe::on_gcode_received(void *argument)
                 if (gcode->has_letter('D')) this->dwell_before_probing = gcode->get_value('D');
                 break;
 
-                case 671:
-                    {
-                      float mpos[3];
-                      THEROBOT->get_current_machine_position(mpos);
-                      Robot::wcs_t wpos = THEROBOT->mcs2wcs(mpos);
-                      this->home_offset = .15-THEROBOT->from_millimeters(std::get<Z_AXIS>(wpos));
-                    }
-                    break;
+            case 671:
+                {
+                  float mpos[3];
+                  THEROBOT->get_current_machine_position(mpos);
+                  Robot::wcs_t wpos = THEROBOT->mcs2wcs(mpos);
+                  this->home_offset = .15-THEROBOT->from_millimeters(std::get<Z_AXIS>(wpos));
+                }
+                break;
 
-                case 672:
-                    {
-                      if (gcode->has_letter('T')) {
-                        toolnum = gcode->get_value('T');
-                      }
-                      if (gcode->has_letter('V')) {
-                        toolnum = gcode->get_value('V');
-                      }
-
-                      int probe_pos = S_NEUTRAL;
-                      if (gcode->has_letter('P')) {
-                        probe_pos = gcode->get_value('P');
-                      }
-
-                      set_sensor_position(gcode, toolnum, probe_pos);
-                    }
-                    break;
-
-                case 505:
-                    gcode->stream->printf("Z Offset: %1.4f Z Offset2: %1.4f Delta: %1.4f", this->home_offset, this->home_offset2, this->tool_delta);
-                    gcode->add_nl = true;
-                    break;
-
-                case 506: //set the active sensor to either T0 or T1
-                    if (gcode->has_letter('T')) {
-                      toolnum = gcode->get_value('T');
-                    }
-                    if (gcode->has_letter('V')) {
-                      toolnum = gcode->get_value('V');
-                    }
-
-                    //we are now setting the delta in the toolmanager - don't need to do anything here anymore?
-                    set_active_tool(gcode, toolnum);
-                    break;
-
-                case 507:
-                    if (gcode->has_letter('T')) {
-                      toolnum = gcode->get_value('T');
-                    }
-                    if (gcode->has_letter('V')) {
-                      toolnum = gcode->get_value('V');
-                    }
-
-                    set_active_probe(toolnum);
-                    break;
-
-                case 508:
-                  {
-                    if (gcode->has_letter('T')) {
-                      toolnum = gcode->get_value('T');
-                    }
-                    if (gcode->has_letter('V')) {
-                      toolnum = gcode->get_value('V');
-                    }
-
-                    int probe_pos = S_NEUTRAL;
-                    if (gcode->has_letter('P')) {
-                      probe_pos = gcode->get_value('P');
-                    }
-
-                    set_sensor_position(gcode, toolnum, probe_pos);
+            case 672:
+                {
+                  if (gcode->has_letter('T')) {
+                    toolnum = gcode->get_value('T');
                   }
-                  break;
+                  if (gcode->has_letter('V')) {
+                    toolnum = gcode->get_value('V');
+                  }
 
-                case 510:
-                    // M510: calibrate on
-                    set_sensor_state(gcode, SENSOR_STATE_CALIBRATE);
-                    break;
+                  int probe_pos = S_NEUTRAL;
+                  if (gcode->has_letter('P')) {
+                    probe_pos = gcode->get_value('P');
+                  }
 
-                case 511:
-                    // M511: calibrate off
-                    set_sensor_state(gcode, SENSOR_STATE_OFF);
-                    break;
+                  set_sensor_position(gcode, toolnum, probe_pos);
+                }
+                break;
 
-                case 515:
-                    set_sensor_state(gcode, SENSOR_STATE_ON);
-                    break;
+			case 673:
+				if (gcode->has_letter('J')) this->probe_up_val = gcode->get_value('J');
+				if (gcode->has_letter('L')) this->probe_down_val = gcode->get_value('L');
+				if (gcode->has_letter('M')) this->probe2_up_val = gcode->get_value('M');
+				if (gcode->has_letter('N')) this->probe2_down_val = gcode->get_value('N');
+				break;
 
-                case 516:
-                    set_sensor_state(gcode, SENSOR_STATE_OFF);
-                    break;
 
-				case 517:
-					//reset to initial probe state
-					//right now that is only reset the tool deltas
-					this->tool_delta = 0;
-	                this->store_delta();
-	                gcode->stream->printf("Reset tool state\n");
-					break;
+            case 505:
+                gcode->stream->printf("Z Offset: %1.4f Z Offset2: %1.4f Delta: %1.4f", this->home_offset, this->home_offset2, this->tool_delta);
+                gcode->add_nl = true;
+                break;
+
+            case 506: //set the active sensor to either T0 or T1
+                if (gcode->has_letter('T')) {
+                  toolnum = gcode->get_value('T');
+                }
+                if (gcode->has_letter('V')) {
+                  toolnum = gcode->get_value('V');
+                }
+
+                //we are now setting the delta in the toolmanager - don't need to do anything here anymore?
+                set_active_tool(gcode, toolnum);
+                break;
+
+            case 507:
+                if (gcode->has_letter('T')) {
+                  toolnum = gcode->get_value('T');
+                }
+                if (gcode->has_letter('V')) {
+                  toolnum = gcode->get_value('V');
+                }
+
+                set_active_probe(toolnum);
+                break;
+
+            case 508:
+              {
+                if (gcode->has_letter('T')) {
+                  toolnum = gcode->get_value('T');
+                }
+                if (gcode->has_letter('V')) {
+                  toolnum = gcode->get_value('V');
+                }
+
+                int probe_pos = S_NEUTRAL;
+                if (gcode->has_letter('P')) {
+                  probe_pos = gcode->get_value('P');
+                }
+
+                set_sensor_position(gcode, toolnum, probe_pos);
+              }
+              break;
+
+            case 510:
+                // M510: calibrate on
+                set_sensor_state(gcode, SENSOR_STATE_CALIBRATE);
+                break;
+
+            case 511:
+                // M511: calibrate off
+                set_sensor_state(gcode, SENSOR_STATE_OFF);
+                break;
+
+            case 515:
+                set_sensor_state(gcode, SENSOR_STATE_ON);
+                break;
+
+            case 516:
+                set_sensor_state(gcode, SENSOR_STATE_OFF);
+                break;
+
+			case 517:
+				//reset to initial probe state
+				//right now that is only reset the tool deltas
+				this->tool_delta = 0;
+                this->store_delta();
+                gcode->stream->printf("Reset tool state\n");
+				break;
 
 
             case 500: // save settings
             case 503: // print settings
                 gcode->stream->printf(";Probe feedrates Slow/fast(K)/Return (mm/sec) max_z (mm) height (mm) dwell (s):\nM670 S%1.2f K%1.2f R%1.2f Z%1.2f H%1.2f D%1.2f O%1.4f Q%1.4f\n",
                     this->slow_feedrate, this->fast_feedrate, this->return_feedrate, this->max_z, this->probe_height, this->dwell_before_probing, this->home_offset, this->home_offset2);
+
+				gcode->stream->printf(";Probe servo positions:\nM673 J%1.4f L%1.4f M%1.4f N%1.4f\n",
+					this->probe_up_val, this->probe_down_val, this->probe2_up_val, this->probe2_down_val);
 
                 // fall through is intended so leveling strategies can handle m-codes too
 

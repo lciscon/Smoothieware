@@ -138,6 +138,13 @@ void Extruder::deselect()
     THEROBOT->get_e_scale_fnc = nullptr;
 }
 
+void Extruder::set_offset(float *newoffset)
+{
+	this->offset[0] = newoffset[0];
+	this->offset[1] = newoffset[1];
+	this->offset[2] = newoffset[2];
+}
+
 void Extruder::on_get_public_data(void *argument)
 {
     PublicDataRequest *pdr = static_cast<PublicDataRequest *>(argument);

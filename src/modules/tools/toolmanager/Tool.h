@@ -19,6 +19,7 @@ public:
 
     virtual void select()= 0;
     virtual void deselect()= 0;
+	virtual void set_offset(float *newoffset)= 0;
     virtual float *get_offset() { return offset; }
     virtual uint16_t get_name() const { return identifier; }
 
