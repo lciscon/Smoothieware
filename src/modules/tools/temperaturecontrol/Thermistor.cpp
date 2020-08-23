@@ -246,6 +246,11 @@ float Thermistor::get_temperature()
 
 void Thermistor::get_raw()
 {
+	static float cc0=-2.457445131972171e+02; //LC
+	static float cc1=2.356226766421429e-01;//LC
+	static float cc2=1.011383918573980e-05;//LC
+	static float t_cal=0;  //LCLC was 0;
+
     if(this->bad_config) {
        THEKERNEL->streams->printf("WARNING: The config is bad for this temperature sensor\n");
     }
@@ -266,7 +271,8 @@ void Thermistor::get_raw()
         t= (1.0F / (this->c1 + this->c2 * l + this->c3 * powf(l,3))) - 273.15F;
         THEKERNEL->streams->printf("S/H temp= %f, min= %f, max= %f, delta= %f\n", t, min_temp, max_temp, max_temp-min_temp);
     }else{
-        t= (1.0F / (k + (j * logf(r / r0)))) - 273.15F;
+//        t= (1.0F / (k + (j * logf(r / r0)))) - 273.15F;
+		t= cc0 + cc1*r + cc2*r*r + t_cal; //LC
         THEKERNEL->streams->printf("beta temp= %f, min= %f, max= %f, delta= %f\n", t, min_temp, max_temp, max_temp-min_temp);
     }
 
@@ -282,6 +288,11 @@ void Thermistor::get_raw()
 
 float Thermistor::adc_value_to_temperature(uint32_t adc_value)
 {
+	static float cc0=-2.457445131972171e+02; //LC
+	static float cc1=2.356226766421429e-01;//LC
+	static float cc2=1.011383918573980e-05;//LC
+	static float t_cal=0; //LCLC was 0
+
     const uint32_t max_adc_value= THEKERNEL->adc->get_max_value();
     if ((adc_value >= max_adc_value) || (adc_value == 0))
         return infinityf();
@@ -298,7 +309,8 @@ float Thermistor::adc_value_to_temperature(uint32_t adc_value)
         t= (1.0F / (this->c1 + this->c2 * l + this->c3 * powf(l,3))) - 273.15F;
     }else{
         // use Beta value
-        t= (1.0F / (k + (j * logf(r / r0)))) - 273.15F;
+//        t= (1.0F / (k + (j * logf(r / r0)))) - 273.15F; LC
+		t= cc0 + cc1*r + cc2*r*r + t_cal; //LC
     }
 
     return t;
