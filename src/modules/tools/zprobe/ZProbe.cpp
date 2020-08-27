@@ -30,6 +30,7 @@
 #include "TemperatureControlPool.h"
 #include "ToolManager.h"
 #include "ToolManagerPublicAccess.h"
+//#include "wait_api.h"
 
 // strategies we know about
 #include "DeltaCalibrationStrategy.h"
@@ -401,6 +402,26 @@ float ZProbe::get_tool_temperature(int toolnum)
     return 0.0F;
 }
 
+bool ZProbe::check_probe_state(bool check1, bool check2)
+{
+	bool checkval = true;
+	if (check1) {
+	  if(this->pin.get() != invert_probe) {
+		  checkval = true;
+	  } else {
+		checkval = false;
+	  }
+	} else if (check2) {
+	  if(this->pin2.get() != invert_probe) {
+		checkval = true;
+	  } else {
+		checkval = false;
+	  }
+	}
+
+	return(checkval);
+}
+
 void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos)
 {
   char buf[32];
@@ -487,31 +508,19 @@ void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos)
   Gcode gc2(g2, &(StreamOutput::NullStream));
   THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc2);
 
+  //let everything settle down
+  THEKERNEL->conveyor->wait_for_idle();
+
+//  wait(2);
+
   //if we are raising the servo double check that the sensor triggered correctly
   bool checkval = true;
   if (this->disable_check_probe == false) {
-	  if (check1) {
-	    if(this->pin.get() != invert_probe) {
-	        checkval = true;
-	    } else {
-	      checkval = false;
-	    }
-	  } else if (check2) {
-	    if(this->pin2.get() != invert_probe) {
-	      checkval = true;
-	    } else {
-	      checkval = false;
-	    }
-	  }
 
+	  checkval = this->check_probe_state(check1,check2);
 	  if (checkval == false) {
-	    //throw exception
-	//    gcode->stream->printf("//action:prompt_begin Sensor initialization failure\n");
-	//    gcode->stream->printf("//action:prompt_choice Ok\n");
-	//    gcode->stream->printf("//action:prompt_show\n");
-	    gcode->stream->printf("//action:error Sensor initialization failure\n");
-
-	    THEKERNEL->call_event(ON_HALT, nullptr);
+    	gcode->stream->printf("//action:error Sensor initialization failure\n");
+    	THEKERNEL->call_event(ON_HALT, nullptr);
 	  }
 	}
 }
@@ -832,10 +841,10 @@ void ZProbe::on_gcode_received(void *argument)
                 break;
 
 			case 673:
-				if (gcode->has_letter('J')) this->probe_up_val = gcode->get_value('J');
-				if (gcode->has_letter('L')) this->probe_down_val = gcode->get_value('L');
-				if (gcode->has_letter('M')) this->probe2_up_val = gcode->get_value('M');
-				if (gcode->has_letter('N')) this->probe2_down_val = gcode->get_value('N');
+				if (gcode->has_letter('A')) this->probe_up_val = gcode->get_value('A');
+				if (gcode->has_letter('B')) this->probe_down_val = gcode->get_value('B');
+				if (gcode->has_letter('C')) this->probe2_up_val = gcode->get_value('C');
+				if (gcode->has_letter('D')) this->probe2_down_val = gcode->get_value('D');
 				break;
 
 
@@ -917,7 +926,7 @@ void ZProbe::on_gcode_received(void *argument)
                 gcode->stream->printf(";Probe feedrates Slow/fast(K)/Return (mm/sec) max_z (mm) height (mm) dwell (s):\nM670 S%1.2f K%1.2f R%1.2f Z%1.2f H%1.2f D%1.2f O%1.4f Q%1.4f\n",
                     this->slow_feedrate, this->fast_feedrate, this->return_feedrate, this->max_z, this->probe_height, this->dwell_before_probing, this->home_offset, this->home_offset2);
 
-				gcode->stream->printf(";Probe servo positions:\nM673 J%1.4f L%1.4f M%1.4f N%1.4f\n",
+				gcode->stream->printf(";Probe servo positions:\nM673 A%1.4f B%1.4f C%1.4f D%1.4f\n",
 					this->probe_up_val, this->probe_down_val, this->probe2_up_val, this->probe2_down_val);
 
                 // fall through is intended so leveling strategies can handle m-codes too

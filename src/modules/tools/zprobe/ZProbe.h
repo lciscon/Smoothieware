@@ -50,6 +50,7 @@ public:
     void set_active_probe(int pnum);
     float get_tool_temperature(int toolnum);
     void set_sensor_position(Gcode *gcode, int toolnum, int pos);
+	bool check_probe_state(bool check1, bool check2);
 
     bool getProbeStatus() { return this->pin.get(); }
     float getSlowFeedrate() const { return slow_feedrate; }
