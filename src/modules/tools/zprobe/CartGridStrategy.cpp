@@ -389,8 +389,11 @@ bool CartGridStrategy::handleGcode(Gcode *gcode)
             }
 
             THEROBOT->disable_segmentation= true;
-            if(!doProbe(gcode)) {
+			bool probe_result = doProbe(gcode);
+
+            if(!probe_result) {
                 gcode->stream->printf("Probe failed to complete, check the initial probe height and/or initial_height settings\n");
+				gcode->stream->printf("//action:error Grid probe failure.  Check the sensor.\n");
             } else {
                 gcode->stream->printf("Probe completed. Enter M374 to save this grid\n");
             }
@@ -400,6 +403,12 @@ bool CartGridStrategy::handleGcode(Gcode *gcode)
                 Gcode gc(after_probe, &(StreamOutput::NullStream));
                 THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc);
             }
+
+			if ((probe_result) && (gcode->has_letter('S'))) {
+				//save the grid
+				Gcode gc3("M374", &(StreamOutput::NullStream));
+				THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc3);
+			}
 
             return true;
 
