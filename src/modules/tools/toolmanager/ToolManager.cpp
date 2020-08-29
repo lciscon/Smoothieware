@@ -79,9 +79,6 @@ void ToolManager::on_gcode_received(void *argument)
         }
 	} else if(gcode->has_m) {
         // M code processing here
-		int tnum = 1;
-		const float *old_tool_offset = tools[1]->get_offset();
-		float newoff[3] = {old_tool_offset[0],old_tool_offset[1],0.0};
 
         switch (gcode->m) {
 			case 676: //get current tool #
@@ -90,18 +87,20 @@ void ToolManager::on_gcode_received(void *argument)
 
 			case 675: //set tool offsets
 				if(gcode->subcode == 1) {
-					tnum = 1;
+					const float *old_tool_offset = tools[1]->get_offset();
+					float newoff[3] = {old_tool_offset[0],old_tool_offset[1],0.0};
 					if (gcode->has_letter('X')) newoff[0] = gcode->get_value('X');
 					if (gcode->has_letter('Y')) newoff[1] = gcode->get_value('Y');
-					tools[tnum]->set_offset(newoff);
+					tools[1]->set_offset(newoff);
 				}
 	            break;
 
 			case 500: // save settings
 			case 503: // print settings
 				//BUGBUG HACKHACK FIXFIX only shows tool offset for T1 right now
+				const float *old_tool_offset2 = tools[1]->get_offset();
 				gcode->stream->printf(";Tool offsets:\nM675.1 X%1.4f Y%1.4f\n",
-					old_tool_offset[0],old_tool_offset[1]);
+					old_tool_offset2[0],old_tool_offset2[1]);
 				break;
 		}
     }
