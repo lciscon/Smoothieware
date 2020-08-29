@@ -80,7 +80,8 @@ void ToolManager::on_gcode_received(void *argument)
 	} else if(gcode->has_m) {
         // M code processing here
 		int tnum = 1;
-		float newoff[3] = {0.0,0.0,0.0};
+		const float *old_tool_offset = tools[1]->get_offset();
+		float newoff[3] = {old_tool_offset[0],old_tool_offset[1],0.0};
 
         switch (gcode->m) {
 			case 676: //get current tool #
@@ -99,9 +100,8 @@ void ToolManager::on_gcode_received(void *argument)
 			case 500: // save settings
 			case 503: // print settings
 				//BUGBUG HACKHACK FIXFIX only shows tool offset for T1 right now
-				const float *new_tool_offset = tools[1]->get_offset();
 				gcode->stream->printf(";Tool offsets:\nM675.1 X%1.4f Y%1.4f\n",
-					new_tool_offset[0],new_tool_offset[1]);
+					old_tool_offset[0],old_tool_offset[1]);
 				break;
 		}
     }

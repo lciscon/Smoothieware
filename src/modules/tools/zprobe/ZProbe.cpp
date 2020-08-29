@@ -402,16 +402,16 @@ float ZProbe::get_tool_temperature(int toolnum)
     return 0.0F;
 }
 
-bool ZProbe::check_probe_state(bool check1, bool check2)
+bool ZProbe::check_probe_state(bool check1a, bool check2a)
 {
 	bool checkval = true;
-	if (check1) {
+	if (check1a) {
 	  if(this->pin.get() != invert_probe) {
 		  checkval = true;
 	  } else {
 		checkval = false;
 	  }
-	} else if (check2) {
+  } else if (check2a) {
 	  if(this->pin2.get() != invert_probe) {
 		checkval = true;
 	  } else {
@@ -423,6 +423,11 @@ bool ZProbe::check_probe_state(bool check1, bool check2)
 }
 
 void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos)
+{
+	set_sensor_position(gcode, toolnum, pos, false);		
+}
+
+void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos, bool checkprobe)
 {
   char buf[32];
   int n = 0;
@@ -489,7 +494,7 @@ void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos)
   }
 
   //make sure sensor is turned on first
-  if (this->disable_check_probe == false) {
+  if ((this->disable_check_probe == false) && (checkprobe == true)) {
 	  if (check1 || check2) {
 		  set_sensor_state(gcode, SENSOR_STATE_ON);
 	  }
@@ -511,12 +516,9 @@ void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos)
   //let everything settle down
   THEKERNEL->conveyor->wait_for_idle();
 
-//  wait(2);
-
   //if we are raising the servo double check that the sensor triggered correctly
   bool checkval = true;
-  if (this->disable_check_probe == false) {
-
+  if ((this->disable_check_probe == false) && (checkprobe == true)) {
 	  checkval = this->check_probe_state(check1,check2);
 	  if (checkval == false) {
     	gcode->stream->printf("//action:error Sensor initialization failure\n");
@@ -577,13 +579,13 @@ void ZProbe::on_gcode_received(void *argument)
               //set probe physical positions
               //also double check that the sensor is working correctly
               //lift up current tool - will throw error if the sensor or servo aren't working
-              set_sensor_position(gcode, toolnum, S_RAISED);
+              set_sensor_position(gcode, toolnum, S_RAISED, true);
               //lift up other tool - will throw error if the sensor or servo aren't working
-              set_sensor_position(gcode, abs(toolnum-1), S_RAISED);
+              set_sensor_position(gcode, abs(toolnum-1), S_RAISED, true);
               //push down current tool
-              set_sensor_position(gcode, toolnum, S_LOWERED);
+              set_sensor_position(gcode, toolnum, S_LOWERED, false);
               //release current tool
-              set_sensor_position(gcode, toolnum, S_NEUTRAL);
+              set_sensor_position(gcode, toolnum, S_NEUTRAL, false);
             }
 
             if (gcode ->subcode == 1) {
