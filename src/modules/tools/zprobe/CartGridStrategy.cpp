@@ -406,7 +406,7 @@ bool CartGridStrategy::handleGcode(Gcode *gcode)
 
 			if ((probe_result) && (gcode->has_letter('S'))) {
 				gcode->stream->printf("Saving the grid\n");
-
+/*
 				// wait until finished
 			    THECONVEYOR->wait_for_idle();
 
@@ -416,7 +416,7 @@ bool CartGridStrategy::handleGcode(Gcode *gcode)
 			    string g3(buf, n);
 			    Gcode gc3(g3, &(StreamOutput::NullStream));
 			    THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc3);
-
+*/
 //				Gcode gc3("M374", &(StreamOutput::NullStream));
 //				THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc3);
 			}
