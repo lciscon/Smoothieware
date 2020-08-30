@@ -396,6 +396,7 @@ bool CartGridStrategy::handleGcode(Gcode *gcode)
 				gcode->stream->printf("//action:error Grid probe failure.  Check the sensor.\n");
             } else {
                 gcode->stream->printf("Probe completed. Enter M374 to save this grid\n");
+				gcode->stream->printf("//action:gridcomplete\n");
             }
             THEROBOT->disable_segmentation= false;
 
@@ -403,23 +404,6 @@ bool CartGridStrategy::handleGcode(Gcode *gcode)
                 Gcode gc(after_probe, &(StreamOutput::NullStream));
                 THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc);
             }
-
-			if ((probe_result) && (gcode->has_letter('S'))) {
-				gcode->stream->printf("Saving the grid\n");
-/*
-				// wait until finished
-			    THECONVEYOR->wait_for_idle();
-
-				//save the grid
-				char buf[32];
-			    int n = snprintf(buf, sizeof(buf), "M374");
-			    string g3(buf, n);
-			    Gcode gc3(g3, &(StreamOutput::NullStream));
-			    THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc3);
-*/
-//				Gcode gc3("M374", &(StreamOutput::NullStream));
-//				THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc3);
-			}
 
             return true;
 
