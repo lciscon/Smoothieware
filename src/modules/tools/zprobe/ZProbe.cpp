@@ -55,8 +55,10 @@
 #define home_offset2_checksum     CHECKSUM("home_offset2")
 #define calibrate_pin_checksum      CHECKSUM("calibrate_pin")
 #define sensor_on_pin_checksum      CHECKSUM("sensor_on_pin")
-#define x_pos_checksum           CHECKSUM("x_pos")
-#define y_pos_checksum           CHECKSUM("y_pos")
+#define x_pos_0_checksum           CHECKSUM("x_pos")
+#define y_pos_0_checksum           CHECKSUM("y_pos")
+#define x_pos_1_checksum           CHECKSUM("x_pos_1")
+#define y_pos_1_checksum           CHECKSUM("y_pos_1")
 
 // from endstop section
 #define delta_homing_checksum    CHECKSUM("delta_homing")
@@ -188,8 +190,10 @@ void ZProbe::config_load()
     this->max_z         = THEKERNEL->config->value(zprobe_checksum, max_z_checksum)->by_default(NAN)->as_number(); // maximum zprobe distance
     this->home_offset         = THEKERNEL->config->value(zprobe_checksum, home_offset_checksum)->by_default(0.0F)->as_number(); // z home offset
     this->home_offset2         = THEKERNEL->config->value(zprobe_checksum, home_offset2_checksum)->by_default(0.0F)->as_number(); // z home offset2
-    this->x_pos         = THEKERNEL->config->value(zprobe_checksum, x_pos_checksum)->by_default(0.0F)->as_number(); // x position for probing
-    this->y_pos         = THEKERNEL->config->value(zprobe_checksum, y_pos_checksum)->by_default(0.0F)->as_number(); // y position for probing
+    this->x_pos_0         = THEKERNEL->config->value(zprobe_checksum, x_pos_0_checksum)->by_default(0.0F)->as_number(); // x position for probing
+    this->y_pos_0         = THEKERNEL->config->value(zprobe_checksum, y_pos_0_checksum)->by_default(0.0F)->as_number(); // y position for probing
+	this->x_pos_1         = THEKERNEL->config->value(zprobe_checksum, x_pos_1_checksum)->by_default(this->x_pos_0)->as_number(); // x position for probing
+    this->y_pos_1         = THEKERNEL->config->value(zprobe_checksum, y_pos_1_checksum)->by_default(this->y_pos_0)->as_number(); // y position for probing
 
     this->calibrate_pin.from_string( THEKERNEL->config->value(zprobe_checksum, calibrate_pin_checksum)->by_default("nc" )->as_string())->as_output();
     this->sensor_on_pin.from_string( THEKERNEL->config->value(zprobe_checksum, sensor_on_pin_checksum)->by_default("nc" )->as_string())->as_output();
@@ -424,7 +428,7 @@ bool ZProbe::check_probe_state(bool check1a, bool check2a)
 
 void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos)
 {
-	set_sensor_position(gcode, toolnum, pos, false);		
+	set_sensor_position(gcode, toolnum, pos, false);
 }
 
 void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos, bool checkprobe)
@@ -592,12 +596,15 @@ void ZProbe::on_gcode_received(void *argument)
               char buf[64];
 			  //HACKHACK we need to make sure the X/Y position accounts for the X/Y tool offset
 			  //easiest way to do that is to put it into the tool mode for that tool
+			  int n;
 			  if (toolnum == 1) {
 				  int n = snprintf(buf, sizeof(buf), "T1");
 				  string g(buf, n);
 				  Gcode gc(g, &(StreamOutput::NullStream));
+				  n = snprintf(buf, sizeof(buf), "G0 X%f Y%f F5000", this->x_pos_1, this->y_pos_1);
+			  } else {
+				  n = snprintf(buf, sizeof(buf), "G0 X%f Y%f F5000", this->x_pos_0, this->y_pos_0);
 			  }
-              int n = snprintf(buf, sizeof(buf), "G0 X%f Y%f F5000", this->x_pos, this->y_pos);
               string g(buf, n);
               Gcode gc(g, &(StreamOutput::NullStream));
               THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc);

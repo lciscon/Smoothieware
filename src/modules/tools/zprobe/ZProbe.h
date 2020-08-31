@@ -72,8 +72,10 @@ private:
     float max_z;
     float home_offset;
     float home_offset2;
-    float x_pos;
-    float y_pos;
+    float x_pos_0;
+    float y_pos_0;
+	float x_pos_1;
+    float y_pos_1;
     float dwell_before_probing;
     float probe_up_val;
     float probe_down_val;
