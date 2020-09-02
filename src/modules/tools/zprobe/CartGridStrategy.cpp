@@ -450,7 +450,7 @@ bool CartGridStrategy::handleGcode(Gcode *gcode)
                 __disable_irq();
                 save_grid(gcode->stream);
                 __enable_irq();
-                gcode->stream->printf("//action:gridsaved\n");
+                gcode->stream->printf("//action:gridsave\n");
             }
 
             return true;
