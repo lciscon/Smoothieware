@@ -594,13 +594,15 @@ void ZProbe::on_gcode_received(void *argument)
 
             if (gcode ->subcode == 1) {
               char buf[64];
+			  int n;
 			  //HACKHACK we need to make sure the X/Y position accounts for the X/Y tool offset
 			  //easiest way to do that is to put it into the tool mode for that tool
-			  int n;
 			  if (toolnum == 1) {
-				  int n = snprintf(buf, sizeof(buf), "T1");
-				  string g(buf, n);
-				  Gcode gc(g, &(StreamOutput::NullStream));
+				  n = snprintf(buf, sizeof(buf), "T1");
+				  string g2(buf, n);
+				  Gcode gc2(g2, &(StreamOutput::NullStream));
+                  THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc2);
+				  gcode->stream->printf("Sending command: %s\n", buf);
 				  n = snprintf(buf, sizeof(buf), "G0 X%f Y%f F5000", this->x_pos_1, this->y_pos_1);
 			  } else {
 				  n = snprintf(buf, sizeof(buf), "G0 X%f Y%f F5000", this->x_pos_0, this->y_pos_0);
@@ -612,8 +614,12 @@ void ZProbe::on_gcode_received(void *argument)
 			  if (toolnum == 1) {
 				  int n = snprintf(buf, sizeof(buf), "T0");
 				  string g(buf, n);
-				  Gcode gc(g, &(StreamOutput::NullStream));
+				  Gcode gc3(g, &(StreamOutput::NullStream));
+				  THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc3);
 			  }
+
+			  // wait for all moves to finish before proceeding
+	          THEKERNEL->conveyor->wait_for_idle();
             }
 
 
