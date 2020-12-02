@@ -76,6 +76,12 @@ private:
     float y_pos_0;
 	float x_pos_1;
     float y_pos_1;
+
+	float mount_turns_mm;
+	float mount_pos1[2];
+	float mount_pos2[2];
+	float mount_pos3[2];
+
     float dwell_before_probing;
     float probe_up_val;
     float probe_down_val;

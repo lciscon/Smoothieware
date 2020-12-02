@@ -60,6 +60,14 @@
 #define x_pos_1_checksum           CHECKSUM("x_pos_1")
 #define y_pos_1_checksum           CHECKSUM("y_pos_1")
 
+#define mount_turns_mm_checksum     CHECKSUM("mount.turns_mm")
+#define mount_pos1_x_checksum           CHECKSUM("mount_pos1_x")
+#define mount_pos1_y_checksum           CHECKSUM("mount_pos1_y")
+#define mount_pos2_x_checksum           CHECKSUM("mount_pos2_x")
+#define mount_pos2_y_checksum           CHECKSUM("mount_pos2_y")
+#define mount_pos3_x_checksum           CHECKSUM("mount_pos3_x")
+#define mount_pos3_y_checksum           CHECKSUM("mount_pos3_y")
+
 // from endstop section
 #define delta_homing_checksum    CHECKSUM("delta_homing")
 #define rdelta_homing_checksum    CHECKSUM("rdelta_homing")
@@ -194,6 +202,14 @@ void ZProbe::config_load()
     this->y_pos_0         = THEKERNEL->config->value(zprobe_checksum, y_pos_0_checksum)->by_default(0.0F)->as_number(); // y position for probing
 	this->x_pos_1         = THEKERNEL->config->value(zprobe_checksum, x_pos_1_checksum)->by_default(this->x_pos_0)->as_number(); // x position for probing
     this->y_pos_1         = THEKERNEL->config->value(zprobe_checksum, y_pos_1_checksum)->by_default(this->y_pos_0)->as_number(); // y position for probing
+
+	this->mount_turns_mm  = THEKERNEL->config->value(zprobe_checksum, mount_turns_mm_checksum)->by_default(1.0F)->as_number(); // mount points turns per mm
+	this->mount_pos1[0]  = THEKERNEL->config->value(zprobe_checksum, mount_pos1_x_checksum)->by_default(0.0F)->as_number(); // mount point1 x
+	this->mount_pos1[1]  = THEKERNEL->config->value(zprobe_checksum, mount_pos1_y_checksum)->by_default(0.0F)->as_number(); // mount point1 y
+	this->mount_pos2[0]  = THEKERNEL->config->value(zprobe_checksum, mount_pos2_x_checksum)->by_default(0.0F)->as_number(); // mount point2 x
+	this->mount_pos2[1]  = THEKERNEL->config->value(zprobe_checksum, mount_pos2_y_checksum)->by_default(0.0F)->as_number(); // mount point2 y
+	this->mount_pos3[0]  = THEKERNEL->config->value(zprobe_checksum, mount_pos3_x_checksum)->by_default(0.0F)->as_number(); // mount point3 x
+	this->mount_pos3[1]  = THEKERNEL->config->value(zprobe_checksum, mount_pos3_y_checksum)->by_default(0.0F)->as_number(); // mount point3 y
 
     this->calibrate_pin.from_string( THEKERNEL->config->value(zprobe_checksum, calibrate_pin_checksum)->by_default("nc" )->as_string())->as_output();
     this->sensor_on_pin.from_string( THEKERNEL->config->value(zprobe_checksum, sensor_on_pin_checksum)->by_default("nc" )->as_string())->as_output();
@@ -592,6 +608,23 @@ void ZProbe::on_gcode_received(void *argument)
               set_sensor_position(gcode, toolnum, S_NEUTRAL, false);
             }
 
+			if (gcode ->subcode == 1) {
+				//HACKHACK we need to make sure the X/Y position accounts for the X/Y tool offset
+				//easiest way to do that is to put it into the tool mode for that tool
+				if (toolnum == 1) {
+					Gcode gc2("T1", &(StreamOutput::NullStream));
+					THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc2);
+
+					coordinated_move(this->x_pos_1, this->y_pos_1, NAN, getFastFeedrate());
+
+					Gcode gc3("T0", &(StreamOutput::NullStream));
+					THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc3);
+				} else {
+					coordinated_move(this->x_pos_0, this->y_pos_0, NAN, getFastFeedrate());
+				}
+			}
+
+/*
             if (gcode ->subcode == 1) {
               char buf[64];
 			  int n;
@@ -602,7 +635,7 @@ void ZProbe::on_gcode_received(void *argument)
 				  string g2(buf, n);
 				  Gcode gc2(g2, &(StreamOutput::NullStream));
                   THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc2);
-				  gcode->stream->printf("Sending command: %s\n", buf);
+
 				  n = snprintf(buf, sizeof(buf), "G0 X%f Y%f F5000", this->x_pos_1, this->y_pos_1);
 			  } else {
 				  n = snprintf(buf, sizeof(buf), "G0 X%f Y%f F5000", this->x_pos_0, this->y_pos_0);
@@ -611,6 +644,7 @@ void ZProbe::on_gcode_received(void *argument)
               Gcode gc(g, &(StreamOutput::NullStream));
               THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc);
               gcode->stream->printf("Sending command: %s\n", buf);
+
 			  if (toolnum == 1) {
 				  int n = snprintf(buf, sizeof(buf), "T0");
 				  string g(buf, n);
@@ -621,7 +655,7 @@ void ZProbe::on_gcode_received(void *argument)
 			  // wait for all moves to finish before proceeding
 	          THEKERNEL->conveyor->wait_for_idle();
             }
-
+*/
 
             if(this->active_pin.get()) {
                 gcode->stream->printf("ZProbe triggered before move, aborting command.\n");
@@ -714,29 +748,33 @@ void ZProbe::on_gcode_received(void *argument)
                 }
             }
         }
-    } else if(gcode->has_g && gcode->g == 95 ) { // G38.2 Straight Probe with error, G38.3 straight probe without error
-        float mpos[3];
-        THEROBOT->get_current_machine_position(mpos);
-        if(THEROBOT->compensationTransform) THEROBOT->compensationTransform(mpos, true); // get inverse compensation transform
+	} else if(gcode->has_g && gcode->g == 33 ) { // probe three points for physical bed leveling
+		float mm;
+		float z_off[3];
+		float z_corr[3];
 
-        if(gcode->has_letter('Z')) {
-          float deltaz = gcode->get_value('Z');
+		if(!this->doProbeAt(mm, this->mount_pos1[0], this->mount_pos1[1])) return;
+		z_off[0] = this->getProbeHeight() - mm;
+		gcode->stream->printf("first probe at X%1.3f, Y%1.3f is %1.3f mm\n", this->mount_pos1[0], this->mount_pos1[1], z_off[0]);
 
-          gcode->stream->printf("95: Current Z position %f\n", mpos[Z_AXIS]);
-          gcode->stream->printf("95: Delta Z %f\n", deltaz);
+		if(!this->doProbeAt(mm, this->mount_pos2[0], this->mount_pos2[1])) return;
+		z_off[1] = this->getProbeHeight() - mm;
+		gcode->stream->printf("second probe at X%1.3f, Y%1.3f is %1.3f mm\n", this->mount_pos2[0], this->mount_pos2[1], z_off[1]);
 
-          mpos[Z_AXIS] += THEROBOT->to_millimeters(deltaz);
-          gcode->stream->printf("95: New Z position %f\n", mpos[Z_AXIS]);
-          if(THEROBOT->compensationTransform) THEROBOT->compensationTransform(mpos, false); // get compensation transform
+		if(!this->doProbeAt(mm, this->mount_pos3[0], this->mount_pos3[1])) return;
+		z_off[2] = this->getProbeHeight() - mm;
+		gcode->stream->printf("third probe at X%1.3f, Y%1.3f is %1.3f mm\n", this->mount_pos3[0], this->mount_pos3[1], z_off[2]);
 
-          ActuatorCoordinates ac{NAN, NAN, NAN};
-          ac[Z_AXIS] =  mpos[Z_AXIS];
-          THEROBOT->reset_actuator_position(ac);
+		float mindist = z_off[0];
 
-          gcode->stream->printf("95: Done!\n");
-        }
+//		z_corr[0] = (z_off[0] - mindist)*this->mount_turns_mm;
+		z_corr[0] = z_off[0];
+		z_corr[1] = (z_off[1] - mindist)*this->mount_turns_mm;
+		z_corr[2] = (z_off[2] - mindist)*this->mount_turns_mm;
+		gcode->stream->printf("Leveling %1.3f %1.3f %1.3f\n", z_corr[0], z_corr[1], z_corr[2]);
+		gcode->stream->printf("//action:levelcomplete\n");
+		return;
 
-        return;
     } else if(gcode->has_g && gcode->g == 38 ) { // G38.2 Straight Probe with error, G38.3 straight probe without error
         // linuxcnc/grbl style probe http://www.linuxcnc.org/docs/2.5/html/gcode/gcode.html#sec:G38-probe
         if(gcode->subcode < 2 || gcode->subcode > 5) {
