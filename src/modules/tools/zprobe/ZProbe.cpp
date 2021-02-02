@@ -203,13 +203,13 @@ void ZProbe::config_load()
 	this->x_pos_1         = THEKERNEL->config->value(zprobe_checksum, x_pos_1_checksum)->by_default(this->x_pos_0)->as_number(); // x position for probing
     this->y_pos_1         = THEKERNEL->config->value(zprobe_checksum, y_pos_1_checksum)->by_default(this->y_pos_0)->as_number(); // y position for probing
 
-	this->mount_turns_mm  = THEKERNEL->config->value(zprobe_checksum, mount_turns_mm_checksum)->by_default(1.0F)->as_number(); // mount points turns per mm
-	this->mount_pos1[0]  = THEKERNEL->config->value(zprobe_checksum, mount_pos1_x_checksum)->by_default(0.0F)->as_number(); // mount point1 x
-	this->mount_pos1[1]  = THEKERNEL->config->value(zprobe_checksum, mount_pos1_y_checksum)->by_default(0.0F)->as_number(); // mount point1 y
-	this->mount_pos2[0]  = THEKERNEL->config->value(zprobe_checksum, mount_pos2_x_checksum)->by_default(0.0F)->as_number(); // mount point2 x
-	this->mount_pos2[1]  = THEKERNEL->config->value(zprobe_checksum, mount_pos2_y_checksum)->by_default(0.0F)->as_number(); // mount point2 y
-	this->mount_pos3[0]  = THEKERNEL->config->value(zprobe_checksum, mount_pos3_x_checksum)->by_default(0.0F)->as_number(); // mount point3 x
-	this->mount_pos3[1]  = THEKERNEL->config->value(zprobe_checksum, mount_pos3_y_checksum)->by_default(0.0F)->as_number(); // mount point3 y
+	this->mount_turns_mm  = THEKERNEL->config->value(zprobe_checksum, mount_turns_mm_checksum)->by_default(0.91F)->as_number(); // mount points turns per mm
+	this->mount_pos1[0]  = THEKERNEL->config->value(zprobe_checksum, mount_pos1_x_checksum)->by_default(125.0F)->as_number(); // mount point1 x
+	this->mount_pos1[1]  = THEKERNEL->config->value(zprobe_checksum, mount_pos1_y_checksum)->by_default(410.0F)->as_number(); // mount point1 y
+	this->mount_pos2[0]  = THEKERNEL->config->value(zprobe_checksum, mount_pos2_x_checksum)->by_default(485.0F)->as_number(); // mount point2 x
+	this->mount_pos2[1]  = THEKERNEL->config->value(zprobe_checksum, mount_pos2_y_checksum)->by_default(410.0F)->as_number(); // mount point2 y
+	this->mount_pos3[0]  = THEKERNEL->config->value(zprobe_checksum, mount_pos3_x_checksum)->by_default(300.0F)->as_number(); // mount point3 x
+	this->mount_pos3[1]  = THEKERNEL->config->value(zprobe_checksum, mount_pos3_y_checksum)->by_default(110.0F)->as_number(); // mount point3 y
 
     this->calibrate_pin.from_string( THEKERNEL->config->value(zprobe_checksum, calibrate_pin_checksum)->by_default("nc" )->as_string())->as_output();
     this->sensor_on_pin.from_string( THEKERNEL->config->value(zprobe_checksum, sensor_on_pin_checksum)->by_default("nc" )->as_string())->as_output();
