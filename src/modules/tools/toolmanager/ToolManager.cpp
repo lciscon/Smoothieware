@@ -97,10 +97,23 @@ void ToolManager::on_gcode_received(void *argument)
 
 			case 500: // save settings
 			case 503: // print settings
+				{
 				//BUGBUG HACKHACK FIXFIX only shows tool offset for T1 right now
 				const float *old_tool_offset2 = tools[1]->get_offset();
 				gcode->stream->printf(";Tool offsets:\nM675.1 X%1.4f Y%1.4f\n",
 					old_tool_offset2[0],old_tool_offset2[1]);
+				}
+				break;
+
+			case 553:
+				{
+				const float *old_tool_offset4 = tools[0]->get_offset();
+				gcode->stream->printf(";T0 Tool offsets: X%1.4f Y%1.4f Z%1.4f\n",
+				old_tool_offset4[0],old_tool_offset4[1],old_tool_offset4[2]);
+				const float *old_tool_offset3 = tools[1]->get_offset();
+				gcode->stream->printf(";T1 Tool offsets: X%1.4f Y%1.4f Z%1.4f\n",
+					old_tool_offset3[0],old_tool_offset3[1],old_tool_offset3[2]);
+				}
 				break;
 		}
     }

@@ -92,6 +92,19 @@
 
 #define abs(a) ((a<0) ? -a : a)
 
+void ZProbe::wait(int sec)
+{
+	char buf[32];
+	int n = 0;
+	n = snprintf(buf, sizeof(buf), "G4 S%d", sec);
+	string g2(buf, n);
+	Gcode gc2(g2, &(StreamOutput::NullStream));
+	THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc2);
+
+	//let everything settle down
+	THEKERNEL->conveyor->wait_for_idle();
+}
+
 
 void ZProbe::on_module_loaded()
 {
@@ -520,7 +533,7 @@ void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos, bool checkp
 	  }
 	}
 
-  gcode->stream->printf("Output %s\n", buf);
+  gcode->stream->printf("Sent: %s\n", buf);
 
   string g(buf, n);
 
@@ -528,13 +541,7 @@ void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos, bool checkp
   THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc);
 
   //wait a bit to make sure it settles
-  n = snprintf(buf, sizeof(buf), "G4 S2");
-  string g2(buf, n);
-  Gcode gc2(g2, &(StreamOutput::NullStream));
-  THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc2);
-
-  //let everything settle down
-  THEKERNEL->conveyor->wait_for_idle();
+  wait(2);
 
   //if we are raising the servo double check that the sensor triggered correctly
   bool checkval = true;
@@ -552,7 +559,7 @@ void ZProbe::on_gcode_received(void *argument)
     Gcode *gcode = static_cast<Gcode *>(argument);
     int toolnum = 0;
 
-    if( gcode->has_g && gcode->g >= 29 && gcode->g <= 32) {
+    if( gcode->has_g && gcode->g >= 29 && gcode->g <= 33) {
 
         invert_probe = false;
         // make sure the probe is defined and not already triggered before moving motors
@@ -561,7 +568,28 @@ void ZProbe::on_gcode_received(void *argument)
             return;
         }
 
+		//make sure both arms are in a neutral state BEFORE turning on the sensor otherwise it may not initialize correctly
+		if((gcode->subcode == 1) || (gcode->subcode == 2) || ( gcode->g == 32 ) || ( gcode->g == 33 )) {
+          gcode->stream->printf("Setting probe positions.\n");
+          //set probe physical positions
+          //also double check that the sensor is working correctly
+          //lift up the tools - will throw error if the sensor or servo aren't working
+/*	  		  BUGBUG HACKHACK FIXFIX testing the probing doesn't work well right now. Disable for now.
+          set_sensor_position(gcode, 0, S_RAISED, true);
+          set_sensor_position(gcode, 1, S_RAISED, true);
+          //push down tools
+          set_sensor_position(gcode, 0, S_LOWERED, false);
+		  set_sensor_position(gcode, 1, S_LOWERED, false);
+*/
+
+          //release tools
+          set_sensor_position(gcode, 0, S_NEUTRAL, false);
+		  set_sensor_position(gcode, 1, S_NEUTRAL, false);
+        }
+
+
         set_sensor_state(gcode, SENSOR_STATE_ON);
+
 
         //tool number used to be indicated with a T.  However this causes the tool ToolManager
         //to switch coordinate systems.  That messes up the Z.  Keep the T for compatibility
@@ -580,6 +608,7 @@ void ZProbe::on_gcode_received(void *argument)
             gcode->stream->printf("ZProbe temperature: %1.4f\n", curtemp);
             if ((curtemp == 0) || (curtemp == infinityf())) {
               gcode->stream->printf("ZProbe tool not connected, aborting command.\n");
+//			  gcode->stream->printf("//action:error ZProbe tool not connected. Make sure hotend is attached.\n");
               return;
             }
         }
@@ -593,79 +622,66 @@ void ZProbe::on_gcode_received(void *argument)
         if( gcode->g == 30 ) { // simple Z probe
             // first wait for all moves to finish
             THEKERNEL->conveyor->wait_for_idle();
+			bool set_z= (gcode->has_letter('Z') && !is_rdelta);
+            bool set_q= (gcode->has_letter('Q') && !is_rdelta);
+            bool set_d= (gcode->has_letter('D') && !is_rdelta);
 
-            if((gcode->subcode == 1) || (gcode->subcode == 2)) {
-              gcode->stream->printf("Setting probe positions.\n");
-              //set probe physical positions
-              //also double check that the sensor is working correctly
-              //lift up current tool - will throw error if the sensor or servo aren't working
-              set_sensor_position(gcode, toolnum, S_RAISED, true);
-              //lift up other tool - will throw error if the sensor or servo aren't working
-              set_sensor_position(gcode, abs(toolnum-1), S_RAISED, true);
-              //push down current tool
-              set_sensor_position(gcode, toolnum, S_LOWERED, false);
-              //release current tool
-              set_sensor_position(gcode, toolnum, S_NEUTRAL, false);
-            }
-
-			if (gcode ->subcode == 1) {
+			if ((gcode ->subcode == 1) || (gcode ->subcode == 3)) {
 				//HACKHACK we need to make sure the X/Y position accounts for the X/Y tool offset
 				//easiest way to do that is to put it into the tool mode for that tool
 				if (toolnum == 1) {
+
+					gcode->stream->printf("Sent: T1\n");
 					Gcode gc2("T1", &(StreamOutput::NullStream));
 					THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc2);
 
-					coordinated_move(this->x_pos_1, this->y_pos_1, NAN, getFastFeedrate());
+					coordinated_move(this->x_pos_1, this->y_pos_1, NAN, getFastFeedrate(), false, true);
 
+					if(set_d) {
+						gcode->stream->printf("Sent: T0\n");
+						Gcode gc3("T0", &(StreamOutput::NullStream));
+						THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc3);
+					}
+				} else {
+					gcode->stream->printf("Sent: T0\n");
 					Gcode gc3("T0", &(StreamOutput::NullStream));
 					THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc3);
-				} else {
 					coordinated_move(this->x_pos_0, this->y_pos_0, NAN, getFastFeedrate());
 				}
+
+				float mpos[3];
+				THEROBOT->get_current_machine_position(mpos);
+				if(THEROBOT->compensationTransform) THEROBOT->compensationTransform(mpos, true); // get inverse compensation transform
+
+				Robot::wcs_t wpos = THEROBOT->mcs2wcs(mpos);
+				float curz = THEROBOT->from_millimeters(std::get<Z_AXIS>(wpos));
+
+				gcode->stream->printf("Original Z:%1.4f\n", curz);
 			}
 
 /*
-            if (gcode ->subcode == 1) {
-              char buf[64];
-			  int n;
-			  //HACKHACK we need to make sure the X/Y position accounts for the X/Y tool offset
-			  //easiest way to do that is to put it into the tool mode for that tool
-			  if (toolnum == 1) {
-				  n = snprintf(buf, sizeof(buf), "T1");
-				  string g2(buf, n);
-				  Gcode gc2(g2, &(StreamOutput::NullStream));
-                  THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc2);
+			if((gcode->subcode == 1) || (gcode->subcode == 2)) {
+              gcode->stream->printf("Setting probe positions.\n");
+              //set probe physical positions
+              //also double check that the sensor is working correctly
+              //lift up the tools - will throw error if the sensor or servo aren't working
+              set_sensor_position(gcode, 0, S_RAISED, true);
+              set_sensor_position(gcode, 1, S_RAISED, true);
+              //push down tools
+              set_sensor_position(gcode, 0, S_LOWERED, false);
+			  set_sensor_position(gcode, 1, S_LOWERED, false);
 
-				  n = snprintf(buf, sizeof(buf), "G0 X%f Y%f F5000", this->x_pos_1, this->y_pos_1);
-			  } else {
-				  n = snprintf(buf, sizeof(buf), "G0 X%f Y%f F5000", this->x_pos_0, this->y_pos_0);
-			  }
-              string g(buf, n);
-              Gcode gc(g, &(StreamOutput::NullStream));
-              THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc);
-              gcode->stream->printf("Sending command: %s\n", buf);
-
-			  if (toolnum == 1) {
-				  int n = snprintf(buf, sizeof(buf), "T0");
-				  string g(buf, n);
-				  Gcode gc3(g, &(StreamOutput::NullStream));
-				  THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc3);
-			  }
-
-			  // wait for all moves to finish before proceeding
-	          THEKERNEL->conveyor->wait_for_idle();
+              //release tools
+              set_sensor_position(gcode, 0, S_NEUTRAL, false);
+			  set_sensor_position(gcode, 1, S_NEUTRAL, false);
             }
 */
 
             if(this->active_pin.get()) {
-                gcode->stream->printf("ZProbe triggered before move, aborting command.\n");
+				gcode->stream->printf("//action:error ZProbe triggered early. Check the probe.\n");
                 return;
             }
 
-
-            bool set_z= (gcode->has_letter('Z') && !is_rdelta);
-            bool set_q= (gcode->has_letter('Q') && !is_rdelta);
-            bool set_d= (gcode->has_letter('D') && !is_rdelta);
             bool probe_result;
             bool reverse= (gcode->has_letter('R') && gcode->get_value('R') != 0); // specify to probe in reverse direction
             float rate= gcode->has_letter('F') ? gcode->get_value('F') / 60 : this->slow_feedrate;
@@ -676,51 +692,90 @@ void ZProbe::on_gcode_received(void *argument)
 
             if(probe_result) {
                 // the result is in actuator coordinates moved
-                gcode->stream->printf("Z:%1.4f\n", THEKERNEL->robot->from_millimeters(mm));
+				gcode->stream->printf("Probe succeeded\n");
+//                gcode->stream->printf("Z:%1.4f\n", THEKERNEL->robot->from_millimeters(mm));
 
                 if(set_z) {
                     // set current Z to the specified value, shortcut for G92 Znnn
                     char buf[32];
                     int n = snprintf(buf, sizeof(buf), "G92 Z%f", gcode->get_value('Z'));
                     string g(buf, n);
+					gcode->stream->printf("Sent: %s\n", buf);
                     Gcode gc(g, &(StreamOutput::NullStream));
                     THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc);
-              } else if(set_q) {
-                  // set Z to the stored value, and leave probe where it is
-                  char buf[32];
-                  int n;
-                  if (toolnum == 0) {
-                    n = snprintf(buf, sizeof(buf), "G92 Z%f", this->home_offset);
-                  } else {
-                    n = snprintf(buf, sizeof(buf), "G92 Z%f", this->home_offset2);
-                  }
-                  string g(buf, n);
-                  Gcode gc(g, &(StreamOutput::NullStream));
-                  THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc);
-              } else if(set_d) {
-                //set relative offset to first sensor
-                float mpos[3];
-                THEROBOT->get_current_machine_position(mpos);
-                if(THEROBOT->compensationTransform) THEROBOT->compensationTransform(mpos, true); // get inverse compensation transform
+                } else if(set_q) {
+                    // set Z to the stored value, and leave probe where it is
+                    char buf[32];
+                    int n;
+                    if (toolnum == 0) {
+                      n = snprintf(buf, sizeof(buf), "G92 Z%f", this->home_offset);
+                    } else {
+                      n = snprintf(buf, sizeof(buf), "G92 Z%f", this->home_offset2);
+                    }
+                    string g(buf, n);
+                    Gcode gc(g, &(StreamOutput::NullStream));
+				    gcode->stream->printf("Sent: %s\n", buf);
+                    THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc);
+                } else if(set_d) {
+	                //set relative offset to first sensor
+	                float mpos[3];
+	                THEROBOT->get_current_machine_position(mpos);
+	                if(THEROBOT->compensationTransform) THEROBOT->compensationTransform(mpos, true); // get inverse compensation transform
 
-                Robot::wcs_t wpos = THEROBOT->mcs2wcs(mpos);
-                float curz = THEROBOT->from_millimeters(std::get<Z_AXIS>(wpos));
+	                Robot::wcs_t wpos = THEROBOT->mcs2wcs(mpos);
+	                float curz = THEROBOT->from_millimeters(std::get<Z_AXIS>(wpos));
 
-                this->tool_delta = curz - this->home_offset2;
-                this->store_delta();
-                gcode->stream->printf("Current Z:%1.4f Home Offset: %1.4f  Home Offset2: %1.4f  New Delta: %1.4f\n", curz, this->home_offset, this->home_offset2, this->tool_delta);
+	                this->tool_delta = curz - this->home_offset2;
+	                this->store_delta();
+	                gcode->stream->printf("Current Z:%1.4f Home Offset: %1.4f  Home Offset2: %1.4f  New Delta: %1.4f\n", curz, this->home_offset, this->home_offset2, this->tool_delta);
 
-              }
+                }
 
             } else {
-                gcode->stream->printf("ZProbe not triggered\n");
+				gcode->stream->printf("//action:error ZProbe not triggered. Check the probe.\n");
             }
 
+			gcode->stream->printf("//action:probecomplete\n");
             set_sensor_state(gcode, SENSOR_STATE_OFF);
 
+		} else if (gcode->g == 33 ) { // probe three points for physical bed leveling
+			float mm;
+			float z_off[3];
+			float z_corr[3];
+
+			if(!this->doProbeAt(mm, this->mount_pos1[0], this->mount_pos1[1])) {
+				gcode->stream->printf("//action:error ZProbe triggered early. Check the probe.\n");
+				return;
+			}
+			z_off[0] = this->getProbeHeight() - mm;
+			gcode->stream->printf("first probe at X%1.3f, Y%1.3f is %1.3f mm\n", this->mount_pos1[0], this->mount_pos1[1], z_off[0]);
+
+			if(!this->doProbeAt(mm, this->mount_pos2[0], this->mount_pos2[1])) {
+				gcode->stream->printf("//action:error ZProbe triggered early. Check the probe.\n");
+				return;
+			}
+			z_off[1] = this->getProbeHeight() - mm;
+			gcode->stream->printf("second probe at X%1.3f, Y%1.3f is %1.3f mm\n", this->mount_pos2[0], this->mount_pos2[1], z_off[1]);
+
+			if(!this->doProbeAt(mm, this->mount_pos3[0], this->mount_pos3[1])) {
+				gcode->stream->printf("//action:error ZProbe triggered early. Check the probe.\n");
+				return;
+			}
+			z_off[2] = this->getProbeHeight() - mm;
+			gcode->stream->printf("third probe at X%1.3f, Y%1.3f is %1.3f mm\n", this->mount_pos3[0], this->mount_pos3[1], z_off[2]);
+
+			float mindist = z_off[0];
+
+			z_corr[0] = z_off[0];
+			z_corr[1] = (z_off[1] - mindist)*this->mount_turns_mm;
+			z_corr[2] = (z_off[2] - mindist)*this->mount_turns_mm;
+			gcode->stream->printf("Leveling %1.3f %1.3f %1.3f\n", z_corr[0], z_corr[1], z_corr[2]);
+			gcode->stream->printf("//action:levelcomplete\n");
+			return;
         } else {
             if(this->active_pin.get()) {
-                gcode->stream->printf("ZProbe triggered before move, aborting command.\n");
+				gcode->stream->printf("Probe pin not active?\n");
+//				gcode->stream->printf("//action:error ZProbe triggered early. Check the probe.\n");
                 return;
               }
 
@@ -748,33 +803,6 @@ void ZProbe::on_gcode_received(void *argument)
                 }
             }
         }
-	} else if(gcode->has_g && gcode->g == 33 ) { // probe three points for physical bed leveling
-		float mm;
-		float z_off[3];
-		float z_corr[3];
-
-		if(!this->doProbeAt(mm, this->mount_pos1[0], this->mount_pos1[1])) return;
-		z_off[0] = this->getProbeHeight() - mm;
-		gcode->stream->printf("first probe at X%1.3f, Y%1.3f is %1.3f mm\n", this->mount_pos1[0], this->mount_pos1[1], z_off[0]);
-
-		if(!this->doProbeAt(mm, this->mount_pos2[0], this->mount_pos2[1])) return;
-		z_off[1] = this->getProbeHeight() - mm;
-		gcode->stream->printf("second probe at X%1.3f, Y%1.3f is %1.3f mm\n", this->mount_pos2[0], this->mount_pos2[1], z_off[1]);
-
-		if(!this->doProbeAt(mm, this->mount_pos3[0], this->mount_pos3[1])) return;
-		z_off[2] = this->getProbeHeight() - mm;
-		gcode->stream->printf("third probe at X%1.3f, Y%1.3f is %1.3f mm\n", this->mount_pos3[0], this->mount_pos3[1], z_off[2]);
-
-		float mindist = z_off[0];
-
-//		z_corr[0] = (z_off[0] - mindist)*this->mount_turns_mm;
-		z_corr[0] = z_off[0];
-		z_corr[1] = (z_off[1] - mindist)*this->mount_turns_mm;
-		z_corr[2] = (z_off[2] - mindist)*this->mount_turns_mm;
-		gcode->stream->printf("Leveling %1.3f %1.3f %1.3f\n", z_corr[0], z_corr[1], z_corr[2]);
-		gcode->stream->printf("//action:levelcomplete\n");
-		return;
-
     } else if(gcode->has_g && gcode->g == 38 ) { // G38.2 Straight Probe with error, G38.3 straight probe without error
         // linuxcnc/grbl style probe http://www.linuxcnc.org/docs/2.5/html/gcode/gcode.html#sec:G38-probe
         if(gcode->subcode < 2 || gcode->subcode > 5) {
@@ -791,7 +819,7 @@ void ZProbe::on_gcode_received(void *argument)
         set_sensor_state(gcode, SENSOR_STATE_ON);
 
         if(this->active_pin.get() ^ (gcode->subcode >= 4)) {
-            gcode->stream->printf("error:ZProbe triggered before move, aborting command.\n");
+			gcode->stream->printf("//action:error ZProbe triggered early. Check the probe.\n");
             return;
         }
 
@@ -914,7 +942,7 @@ void ZProbe::on_gcode_received(void *argument)
                   toolnum = gcode->get_value('V');
                 }
 
-                //we are now setting the delta in the toolmanager - don't need to do anything here anymore?
+                //we are now setting the delta in the toolmanager - don't need to do anything here anymore
                 set_active_tool(gcode, toolnum);
                 break;
 
@@ -1033,12 +1061,14 @@ void ZProbe::probe_XYZ(Gcode *gcode, float x, float y, float z)
           int n = snprintf(buf, sizeof(buf), "G92 Z%f", this->home_offset);
           string g(buf, n);
           Gcode gc(g, &(StreamOutput::NullStream));
+		  gcode->stream->printf("Sent: %s\n", buf);
           THEKERNEL->call_event(ON_GCODE_RECEIVED, &gc);
     }
 
     if(probeok == 0 && (gcode->subcode == 2 || gcode->subcode == 4)) {
         // issue error if probe was not triggered and subcode is 2 or 4
-        gcode->stream->printf("ALARM: Probe fail\n");
+//        gcode->stream->printf("ALARM: Probe fail\n");
+		gcode->stream->printf("//action:error Probe failure. Check the probe.\n");
         THEKERNEL->call_event(ON_HALT, nullptr);
     }
 }
@@ -1046,13 +1076,19 @@ void ZProbe::probe_XYZ(Gcode *gcode, float x, float y, float z)
 // issue a coordinated move directly to robot, and return when done
 // Only move the coordinates that are passed in as not nan
 // NOTE must use G53 to force move in machine coordinates and ignore any WCS offsets
-void ZProbe::coordinated_move(float x, float y, float z, float feedrate, bool relative)
+void ZProbe::coordinated_move(float x, float y, float z, float feedrate, bool relative, bool toolcoord)
 {
     #define CMDLEN 128
     char *cmd= new char[CMDLEN]; // use heap here to reduce stack usage
 
     if(relative) strcpy(cmd, "G91 G0 ");
-    else strcpy(cmd, "G53 G0 "); // G53 forces movement in machine coordinate system
+    else {
+		if (toolcoord) {
+			strcpy(cmd, "G0 ");
+		} else {
+			strcpy(cmd, "G53 G0 "); // G53 forces movement in machine coordinate system
+		}
+	}
 
     if(!isnan(x)) {
         size_t n= strlen(cmd);
@@ -1075,7 +1111,8 @@ void ZProbe::coordinated_move(float x, float y, float z, float feedrate, bool re
 
     if(relative) strcat(cmd, " G90");
 
-    //THEKERNEL->streams->printf("DEBUG: move: %s: %u\n", cmd, strlen(cmd));
+
+//    THEKERNEL->streams->printf("DEBUG: move: %s: %u\n", cmd, strlen(cmd));
 
     // send as a command line as may have multiple G codes in it
     THEROBOT->push_state();

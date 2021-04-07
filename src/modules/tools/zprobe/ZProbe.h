@@ -41,13 +41,14 @@ public:
     bool run_probe_return(float& mm, float feedrate, float max_dist= -1, bool reverse= false);
     bool doProbeAt(float &mm, float x, float y);
 
-    void coordinated_move(float x, float y, float z, float feedrate, bool relative=false);
+    void coordinated_move(float x, float y, float z, float feedrate, bool relative=false, bool toolcoord=false);
     void home();
 
     void set_sensor_state(Gcode *gcode, int mode);
     void reset_sensor_state();
     void set_active_tool(Gcode *gcode, int tnum);
     void set_active_probe(int pnum);
+	void wait(int sec);
     float get_tool_temperature(int toolnum);
     void set_sensor_position(Gcode *gcode, int toolnum, int pos);
 	void set_sensor_position(Gcode *gcode, int toolnum, int pos, bool checkprobe);
