@@ -52,13 +52,20 @@ public:
     float get_tool_temperature(int toolnum);
     void set_sensor_position(Gcode *gcode, int toolnum, int pos);
 	void set_sensor_position(Gcode *gcode, int toolnum, int pos, bool checkprobe);
+	void set_sensor_position_new(Gcode *gcode, int toolnum, int pos, bool checkprobe);
+	void set_sensor_position_old(Gcode *gcode, int toolnum, int pos, bool checkprobe);
+
 	bool check_probe_state(bool check1, bool check2);
+	void clear_cam(Gcode *gcode);
+	void move_cam(Gcode *gcode, float angle);
+	void init_cam(Gcode *gcode);
 
     bool getProbeStatus() { return this->pin.get(); }
     float getSlowFeedrate() const { return slow_feedrate; }
     float getFastFeedrate() const { return fast_feedrate; }
     float getProbeHeight() const { return probe_height; }
     float getMaxZ() const { return max_z; }
+
 
 private:
     void config_load();
@@ -100,6 +107,16 @@ private:
     std::vector<LevelingStrategy*> strategies;
     uint16_t debounce_ms, debounce;
     int sensor_mode;
+
+	Pin *cam_pin;
+	float cam_steps_degree;
+	float cam_speed;
+	float cam_angle_offset;
+	float cam_position;
+	float cam_tool0;
+	float cam_tool1;
+	float cam_neutral;
+
 
     volatile struct {
         bool is_delta:1;

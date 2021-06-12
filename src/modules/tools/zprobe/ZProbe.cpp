@@ -77,6 +77,14 @@
 #define probe2_up_checksum    CHECKSUM("probe2_up")
 #define probe2_down_checksum    CHECKSUM("probe2_down")
 
+#define cam_speed_checksum    CHECKSUM("cam_speed")
+#define cam_steps_degree_checksum    CHECKSUM("cam_steps_degree")
+#define cam_angle_offset_checksum    CHECKSUM("cam_angle_offset")
+#define cam_pin_checksum    CHECKSUM("cam_pin")
+#define cam_tool0_checksum    CHECKSUM("cam_tool0")
+#define cam_tool1_checksum    CHECKSUM("cam_tool1")
+#define cam_neutral_checksum    CHECKSUM("cam_neutral")
+
 #define X_AXIS 0
 #define Y_AXIS 1
 #define Z_AXIS 2
@@ -126,6 +134,8 @@ void ZProbe::on_module_loaded()
     //reset the sensor state
     reset_sensor_state();
 
+	this->cam_position = -1;
+
     THEKERNEL->slow_ticker->attach(1000, this, &ZProbe::read_probe);
 }
 
@@ -140,7 +150,7 @@ void ZProbe::config_load()
     this->probe2_up_val    = THEKERNEL->config->value(zprobe_checksum, probe2_up_checksum)->by_default(0  )->as_number();
     this->probe2_down_val    = THEKERNEL->config->value(zprobe_checksum, probe2_down_checksum)->by_default(0  )->as_number();
 
-	this->disable_check_probe    = THEKERNEL->config->value(zprobe_checksum, disable_check_probe_checksum)->by_default(false )->as_bool();
+	this->disable_check_probe    = THEKERNEL->config->value(zprobe_checksum, disable_check_probe_checksum)->by_default(true )->as_bool();
 
     // set the active pin to the first one
     this->active_pin = this->pin;
@@ -231,6 +241,21 @@ void ZProbe::config_load()
         this->max_z = THEKERNEL->config->value(gamma_max_checksum)->by_default(200)->as_number(); // maximum zprobe distance
     }
     this->dwell_before_probing = THEKERNEL->config->value(zprobe_checksum, dwell_before_probing_checksum)->by_default(0)->as_number(); // dwell time in seconds before probing
+
+	this->cam_steps_degree = THEKERNEL->config->value(zprobe_checksum, cam_steps_degree_checksum)->by_default(302.00F)->as_number(); // steps per degree for the cam
+	this->cam_speed = THEKERNEL->config->value(zprobe_checksum, cam_speed_checksum)->by_default(360.00F)->as_number(); // degrees per second
+	this->cam_tool0 = THEKERNEL->config->value(zprobe_checksum, cam_tool0_checksum)->by_default(180.00F)->as_number(); // steps per degree for the cam
+	this->cam_tool1 = THEKERNEL->config->value(zprobe_checksum, cam_tool1_checksum)->by_default(0.00F)->as_number(); // steps per degree for the cam
+	this->cam_neutral = THEKERNEL->config->value(zprobe_checksum, cam_neutral_checksum)->by_default(90.00F)->as_number(); // steps per degree for the cam
+	this->cam_angle_offset = THEKERNEL->config->value(zprobe_checksum, cam_angle_offset_checksum)->by_default(-35.00F)->as_number(); // steps per degree for the cam
+
+
+	this->cam_pin= new Pin();
+	this->cam_pin->from_string(THEKERNEL->config->value(zprobe_checksum, cam_pin_checksum)->by_default("nc")->as_string())->as_output();
+	if(!this->cam_pin->connected()) {
+		delete this->cam_pin;
+		this->cam_pin= nullptr;
+	}
 
 }
 
@@ -438,13 +463,20 @@ float ZProbe::get_tool_temperature(int toolnum)
 bool ZProbe::check_probe_state(bool check1a, bool check2a)
 {
 	bool checkval = true;
+
 	if (check1a) {
 	  if(this->pin.get() != invert_probe) {
 		  checkval = true;
 	  } else {
 		checkval = false;
 	  }
-  } else if (check2a) {
+
+	  if (checkval) {
+		  return(checkval);
+	  }
+  	}
+
+  	if (check2a) {
 	  if(this->pin2.get() != invert_probe) {
 		checkval = true;
 	  } else {
@@ -455,12 +487,169 @@ bool ZProbe::check_probe_state(bool check1a, bool check2a)
 	return(checkval);
 }
 
-void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos)
+void ZProbe::clear_cam(Gcode *gcode)
 {
-	set_sensor_position(gcode, toolnum, pos, false);
+	//make sure sensor is initialized properly
+	//for this task we just want a simple on/off state without all the smart stuff
+ 	set_sensor_state(gcode, SENSOR_STATE_OFF);  // was SENSOR_STATE_ON
+
+	//first check if either probe is already triggered.  If it is, move a bit until it goes off.
+	if (this->check_probe_state(true,true)) {
+		gcode->stream->printf(" Moving off sensor\n");
+
+		this->cam_position = 0;
+
+		for (int i=1;i<360;i++) {
+			this->move_cam(gcode, i);
+			if (!this->check_probe_state(true,true)) {
+				gcode->stream->printf(" Found neutral position\n");
+				this->move_cam(gcode, i);
+				break;
+			}
+		}
+
+		//if either one of the sensors is still triggered, then something is wrong
+		if (this->check_probe_state(true,true)) {
+			//throw an error
+			//probe never un-triggered
+			gcode->stream->printf("//action:error Sensor setup failure\n");
+//			THEKERNEL->call_event(ON_HALT, nullptr);
+		} else {
+			//reset the sensor, since it didn't initialize correctly if the sensor is on
+			set_sensor_state(gcode, SENSOR_STATE_OFF);
+		}
+	}
 }
 
-void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos, bool checkprobe)
+void ZProbe::init_cam(Gcode *gcode)
+{
+	bool sensor1_triggered = false;
+	bool sensor2_triggered = false;
+	float start = -1;
+	float end = -1;
+	float home;
+
+	gcode->stream->printf(" Initializing cam\n");
+
+	//reset the cam to a neutral position first
+	clear_cam(gcode);
+
+	//make sure sensor is initialized properly
+	//for this task we just want a simple on/off state without all the smart stuff
+ 	set_sensor_state(gcode, SENSOR_STATE_OFF);  // was SENSOR_STATE_ON
+
+	this->cam_position = 0;
+
+	for (int i=1;i<370;i++) {
+		this->move_cam(gcode, i);
+		if (this->check_probe_state(true,false)) {
+			sensor1_triggered = true;
+			if (start < 0) {
+				gcode->stream->printf(" Found start at %d\n", i);
+				start = i;
+			}
+		} else {
+			if (end < 0) {
+				if (start >= 0) {
+					gcode->stream->printf(" Found end at %d\n", i);
+					end = i;
+
+					//check for noise.  ingore short duration
+					if (end - start < 3) {
+						gcode->stream->printf(" Discarding noise\n");
+						start = -1;
+						end = -1;
+					}
+				}
+			}
+		}
+
+		if (this->check_probe_state(false,true)) {
+			sensor2_triggered = true;
+		}
+	}
+
+	if ((!sensor1_triggered) || (!sensor2_triggered)) {
+		//throw an error
+		//probe did not trigger
+		gcode->stream->printf("//action:error Sensor initialization failure\n");
+		THEKERNEL->call_event(ON_HALT, nullptr);
+	}
+
+	this->cam_position = 0;
+	home = (start+end)/2;
+	home = home + this->cam_angle_offset; //center_offset
+	gcode->stream->printf(" Center position set to %1.4f\n", home);
+	this->move_cam(gcode, home);
+	this->cam_position = 0;
+
+}
+
+void ZProbe::move_cam(Gcode *gcode, float angle)
+{
+	float deltaangle;
+	float steps;
+	float step_time = 1000000/(this->cam_speed * this->cam_steps_degree)*2;
+
+	if (angle == cam_position) {
+		gcode->stream->printf("CAM already at angle\n");
+		return;
+	}
+
+	if (angle > cam_position) {
+		deltaangle = (angle - cam_position);
+	} else {
+		deltaangle = (360.0 - cam_position + angle);
+	}
+
+	steps = round(deltaangle * this->cam_steps_degree);
+//	gcode->stream->printf("Moving cam %1.4f degrees\n", deltaangle);
+
+	this->cam_pin->set(false);
+	for(int x= 0; x<steps; x++)  //Loop the forward stepping enough times for motion to be visible
+	{
+		this->cam_pin->set(true);
+		safe_delay_us(step_time);
+		this->cam_pin->set(false);
+		safe_delay_us(step_time);
+	}
+
+	this->cam_position = angle;
+}
+
+
+void ZProbe::set_sensor_position_new(Gcode *gcode, int toolnum, int pos, bool checkprobe)
+{
+	float newpos = -1;
+
+	//ignore this command if the cam hasn't been initialized yet
+	if (this->cam_position == -1) {
+		return;
+	}
+
+
+    gcode->stream->printf("Set Sensor Position  Tool: %d Position: %d\n", toolnum, pos);
+
+	switch (pos) {
+	  case S_LOWERED:
+	  	if (toolnum == 0) {
+			newpos = this->cam_tool0;
+		} else {
+			newpos = this->cam_tool1;
+		}
+		break;
+
+	  case S_NEUTRAL:
+	  	newpos = this->cam_neutral;
+		break;
+	}
+
+	if (newpos > -1) {
+		this->move_cam(gcode, newpos);
+	}
+}
+
+void ZProbe::set_sensor_position_old(Gcode *gcode, int toolnum, int pos, bool checkprobe)
 {
   char buf[32];
   int n = 0;
@@ -554,6 +743,22 @@ void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos, bool checkp
 	}
 }
 
+void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos)
+{
+	set_sensor_position(gcode, toolnum, pos, false);
+}
+
+void ZProbe::set_sensor_position(Gcode *gcode, int toolnum, int pos, bool checkprobe)
+{
+	if (this->cam_pin == nullptr) {
+		set_sensor_position_old(gcode, toolnum, pos, checkprobe);
+	} else {
+		set_sensor_position_new(gcode, toolnum, pos, checkprobe);
+	}
+
+}
+
+
 void ZProbe::on_gcode_received(void *argument)
 {
     Gcode *gcode = static_cast<Gcode *>(argument);
@@ -571,17 +776,6 @@ void ZProbe::on_gcode_received(void *argument)
 		//make sure both arms are in a neutral state BEFORE turning on the sensor otherwise it may not initialize correctly
 		if((gcode->subcode == 1) || (gcode->subcode == 2) || ( gcode->g == 32 ) || ( gcode->g == 33 )) {
           gcode->stream->printf("Setting probe positions.\n");
-          //set probe physical positions
-          //also double check that the sensor is working correctly
-          //lift up the tools - will throw error if the sensor or servo aren't working
-/*	  		  BUGBUG HACKHACK FIXFIX testing the probing doesn't work well right now. Disable for now.
-          set_sensor_position(gcode, 0, S_RAISED, true);
-          set_sensor_position(gcode, 1, S_RAISED, true);
-          //push down tools
-          set_sensor_position(gcode, 0, S_LOWERED, false);
-		  set_sensor_position(gcode, 1, S_LOWERED, false);
-*/
-
           //release tools
           set_sensor_position(gcode, 0, S_NEUTRAL, false);
 		  set_sensor_position(gcode, 1, S_NEUTRAL, false);
@@ -658,24 +852,6 @@ void ZProbe::on_gcode_received(void *argument)
 
 				gcode->stream->printf("Original Z:%1.4f\n", curz);
 			}
-
-/*
-			if((gcode->subcode == 1) || (gcode->subcode == 2)) {
-              gcode->stream->printf("Setting probe positions.\n");
-              //set probe physical positions
-              //also double check that the sensor is working correctly
-              //lift up the tools - will throw error if the sensor or servo aren't working
-              set_sensor_position(gcode, 0, S_RAISED, true);
-              set_sensor_position(gcode, 1, S_RAISED, true);
-              //push down tools
-              set_sensor_position(gcode, 0, S_LOWERED, false);
-			  set_sensor_position(gcode, 1, S_LOWERED, false);
-
-              //release tools
-              set_sensor_position(gcode, 0, S_NEUTRAL, false);
-			  set_sensor_position(gcode, 1, S_NEUTRAL, false);
-            }
-*/
 
             if(this->active_pin.get()) {
 				gcode->stream->printf("//action:error ZProbe triggered early. Check the probe.\n");
@@ -855,6 +1031,11 @@ void ZProbe::on_gcode_received(void *argument)
         invert_probe = false;
 
         return;
+	} else if(gcode->has_g && gcode->g == 28 ) { // watch for the homing command & initialize the CAM
+		if ((gcode->subcode != 1) && (gcode->subcode != 2) && (this->cam_pin != nullptr)) {
+			init_cam(gcode);
+		}
+		return;
 
     } else if(gcode->has_m) {
         // M code processing here
@@ -928,6 +1109,12 @@ void ZProbe::on_gcode_received(void *argument)
 				if (gcode->has_letter('D')) this->probe2_down_val = gcode->get_value('D');
 				break;
 
+			case 676:
+				if (this->cam_pin != nullptr) {
+				  	init_cam(gcode);
+				}
+				break;
+
 
             case 505:
                 gcode->stream->printf("Z Offset: %1.4f Z Offset2: %1.4f Delta: %1.4f", this->home_offset, this->home_offset2, this->tool_delta);
@@ -977,6 +1164,10 @@ void ZProbe::on_gcode_received(void *argument)
 
             case 510:
                 // M510: calibrate on
+				if (this->cam_pin != nullptr) {
+					init_cam(gcode);
+					set_sensor_position(gcode, 0, S_NEUTRAL);
+				}
                 set_sensor_state(gcode, SENSOR_STATE_CALIBRATE);
                 break;
 
